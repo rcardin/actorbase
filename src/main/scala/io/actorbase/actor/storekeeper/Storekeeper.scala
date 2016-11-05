@@ -1,8 +1,8 @@
 package io.actorbase.actor.storekeeper
 
 import akka.actor.Actor
-import akka.actor.Actor.Receive
-import io.actorbase.actor.storekeeper.Storekeeper.{Get, Put, Return}
+import io.actorbase.actor.storekeeper.Storekeeper.Request.{Count, Get, Put, Remove}
+import io.actorbase.actor.storekeeper.Storekeeper.Response.{Item, Size}
 
 /**
   * The MIT License (MIT)
@@ -36,24 +36,48 @@ import io.actorbase.actor.storekeeper.Storekeeper.{Get, Put, Return}
   * @since 1.0
   */
 class Storekeeper extends Actor {
-  override def receive: Receive = {
+  override def receive = emptyMap
+
+  def emptyMap: Receive = {
     case Put(k, v) =>
-      val store = context.become(nonEmptyMap(new Map[String, Array[Byte](k -> v)))
+      context.become(nonEmptyMap(Map[String, Array[Byte]](k -> v)))
+    case Count => sender ! Size(0L)
   }
 
   def nonEmptyMap(store: Map[String, Array[Byte]]): Receive = {
     case Put(k, v) => context.become(nonEmptyMap(store + (k -> v)))
-    case Get(k) => sender ! Return(k, store.get(k))
+    case Get(k) => sender ! Item(k, store.get(k))
+    case Remove(k) =>
+      val newStore = store - k
+      context.become {
+        if (newStore.isEmpty) emptyMap
+        else nonEmptyMap(newStore)
+      }
+    case Count => sender ! Size(store.size)
   }
 }
 
 object Storekeeper {
+  sealed trait Message
+
   // Input messages
-  sealed trait Request
-  case class Put(key: String, byte: Array[Byte]) extends Request
-  case class Get(key: String) extends Request
+  object Request {
+    case class Put(key: String, byte: Array[Byte]) extends Message
+
+    case class Get(key: String) extends Message
+
+    case class Remove(key: String) extends Message
+
+    case object Count extends Message
+
+  }
 
   // Output messages
-  sealed trait Response
-  case class Return(key: String, value: Option[Array[Byte]]) extends Response
+  object Response {
+
+    case class Item(key: String, value: Option[Array[Byte]]) extends Message
+
+    case class Size(s: Long) extends Message
+
+  }
 }
