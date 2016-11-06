@@ -2,9 +2,12 @@ package io.actorbase.actor.storekeeper
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
-import io.actorbase.actor.storekeeper.Storekeeper.Request.Count
-import io.actorbase.actor.storekeeper.Storekeeper.Response.Size
+import io.actorbase.actor.storekeeper.Storekeeper.Request.{Count, Put}
+import io.actorbase.actor.storekeeper.Storekeeper.Response.{PutAck, PutNAck, Size}
+import org.apache.commons.lang3.SerializationUtils
 import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpec, WordSpecLike}
+
+import scala.util.{Failure, Success}
 
 /**
   * The MIT License (MIT)
@@ -52,6 +55,26 @@ class StorekeeperTest extends TestKit(ActorSystem("testSystemStorekeeper"))
       val sk = TestActorRef[Storekeeper]
       sk ! Count
       expectMsg(Size(0L))
+    }
+
+    "put a new couple (key, value) inside an empty map" in {
+      val sk = TestActorRef[Storekeeper]
+      sk ! Put("key", SerializationUtils.serialize(42))
+      expectMsg(PutAck("key"))
+    }
+
+    "receive an error message for a couple (null, value)" in {
+      val sk = TestActorRef[Storekeeper]
+      sk ! Put(null, SerializationUtils.serialize(42))
+      expectMsg(PutNAck("Key cannot be null"))
+    }
+
+    "upsert the value of a key already in the map" in {
+      val sk = TestActorRef[Storekeeper]
+      sk ! Put("key", SerializationUtils.serialize(42))
+      sk ! Put("key", SerializationUtils.serialize(18))
+      sk ! Count
+      expectMsgAllOf(PutAck("key"), PutAck("key"), Size(1))
     }
   }
 }

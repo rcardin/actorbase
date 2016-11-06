@@ -1,8 +1,12 @@
 package io.actorbase.actor.storekeeper
 
+import java.util.Objects
+
 import akka.actor.Actor
 import io.actorbase.actor.storekeeper.Storekeeper.Request.{Count, Get, Put, Remove}
-import io.actorbase.actor.storekeeper.Storekeeper.Response.{Item, Size}
+import io.actorbase.actor.storekeeper.Storekeeper.Response.{Item, PutAck, PutNAck, Size}
+
+import scala.util.{Failure, Success, Try}
 
 /**
   * The MIT License (MIT)
@@ -39,13 +43,12 @@ class Storekeeper extends Actor {
   override def receive = emptyMap
 
   def emptyMap: Receive = {
-    case Put(k, v) =>
-      context.become(nonEmptyMap(Map[String, Array[Byte]](k -> v)))
+    case Put(k, v) => put(Map[String, Array[Byte]](), k, v)
     case Count => sender ! Size(0L)
   }
 
   def nonEmptyMap(store: Map[String, Array[Byte]]): Receive = {
-    case Put(k, v) => context.become(nonEmptyMap(store + (k -> v)))
+    case Put(k, v) => put(store, k, v)
     case Get(k) => sender ! Item(k, store.get(k))
     case Remove(k) =>
       val newStore = store - k
@@ -55,13 +58,38 @@ class Storekeeper extends Actor {
       }
     case Count => sender ! Size(store.size)
   }
+
+  private def put(store: Map[String, Array[Byte]], key: String, value: Array[Byte]) = {
+    try {
+      if (key != null) {
+        val newStore = store + (Objects.requireNonNull(key) -> value)
+        sender ! PutAck(key)
+        context.become(nonEmptyMap(newStore))
+      } else {
+        sender ! PutNAck(Storekeeper.KeyNull)
+      }
+    } catch {
+      case ex: Exception =>
+        sender ! PutNAck(ex.getMessage)
+    }
+  }
 }
 
 object Storekeeper {
+
+  val KeyNull = "Key cannot be null"
+
   sealed trait Message
 
   // Input messages
   object Request {
+
+    /**
+      * Upsert operation which eventually updates the previous value of {{key}}.
+      * The key must be not null.
+      * @param key  A key
+      * @param byte A value
+      */
     case class Put(key: String, byte: Array[Byte]) extends Message
 
     case class Get(key: String) extends Message
@@ -74,6 +102,9 @@ object Storekeeper {
 
   // Output messages
   object Response {
+
+    case class PutAck(k: String) extends Message
+    case class PutNAck(msg: String) extends Message
 
     case class Item(key: String, value: Option[Array[Byte]]) extends Message
 
