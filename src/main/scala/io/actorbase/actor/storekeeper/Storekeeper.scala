@@ -4,7 +4,7 @@ import java.util.Objects
 
 import akka.actor.Actor
 import io.actorbase.actor.storekeeper.Storekeeper.Request.{Count, Get, Put, Remove}
-import io.actorbase.actor.storekeeper.Storekeeper.Response.{Item, PutAck, PutNAck, Size}
+import io.actorbase.actor.storekeeper.Storekeeper.Response._
 
 import scala.util.{Failure, Success, Try}
 
@@ -44,18 +44,15 @@ class Storekeeper extends Actor {
 
   def emptyMap: Receive = {
     case Put(k, v) => put(Map[String, Array[Byte]](), k, v)
+    case Get(k) => sender ! Item(k, None)
     case Count => sender ! Size(0L)
+    case Remove(k) => sender ! RemoveAck(k)
   }
 
   def nonEmptyMap(store: Map[String, Array[Byte]]): Receive = {
     case Put(k, v) => put(store, k, v)
     case Get(k) => sender ! Item(k, store.get(k))
-    case Remove(k) =>
-      val newStore = store - k
-      context.become {
-        if (newStore.isEmpty) emptyMap
-        else nonEmptyMap(newStore)
-      }
+    case Remove(k) => remove(store, k)
     case Count => sender ! Size(store.size)
   }
 
@@ -71,6 +68,15 @@ class Storekeeper extends Actor {
     } catch {
       case ex: Exception =>
         sender ! PutNAck(ex.getMessage)
+    }
+  }
+
+  private def remove(store: Map[String, Array[Byte]], key: String) = {
+    val newStore = store - key
+    sender ! RemoveAck(key)
+    context.become {
+      if (newStore.isEmpty) emptyMap
+      else nonEmptyMap(newStore)
     }
   }
 }
@@ -92,23 +98,43 @@ object Storekeeper {
       */
     case class Put(key: String, byte: Array[Byte]) extends Message
 
+    /**
+      * Request for the value associated to {{key}}.
+      * @param key A key
+      */
     case class Get(key: String) extends Message
 
+    /**
+      * Request for the deletion of the value associated to {{key}}.
+      * @param key A key
+      */
     case class Remove(key: String) extends Message
 
+    /**
+      * Request for the actual size of the map.
+      */
     case object Count extends Message
-
   }
 
   // Output messages
   object Response {
 
+    /**
+      * Positive response for the upsert request relative to {{key}}.
+      * @param k The key just upserted
+      */
     case class PutAck(k: String) extends Message
+
+    /**
+      * Negative response for the upsert request relative to {{key}}.
+      * @param msg Error message received during upsertion
+      */
     case class PutNAck(msg: String) extends Message
 
     case class Item(key: String, value: Option[Array[Byte]]) extends Message
 
     case class Size(s: Long) extends Message
 
+    case class RemoveAck(key: String)
   }
 }
