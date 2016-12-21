@@ -6,8 +6,6 @@ import akka.actor.Actor
 import io.actorbase.actor.storekeeper.Storekeeper.Request.{Count, Get, Put, Remove}
 import io.actorbase.actor.storekeeper.Storekeeper.Response._
 
-import scala.util.{Failure, Success, Try}
-
 /**
   * The MIT License (MIT)
   *
