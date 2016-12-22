@@ -60,14 +60,29 @@ class StoreFinder(val name: String) extends Actor {
     Router(BroadcastRoutingLogic(), routees)
   }
 
+  // TODO What if we count here elements of the table?
+
   override def receive: Receive = emptyTable()
 
   def emptyTable(): Receive = {
     // External interface
-    case Upsert(key, payload) => upsertRouter.route(Put(key, payload), sender)
+    case Upsert(key, payload) =>
+      upsertRouter.route(Put(key, payload), sender)
+      almostEmptyTable(Map(key -> List(sender())))
     case Query(key) => sender ! QueryAck(key, None)
     case Count => sender ! CountAck(0)
     case Delete(key) => sender ! DeleteAck(key)
+  }
+
+  def almostEmptyTable(pendingUpsert: Map[String, List[ActorRef]]): Receive = {
+    case Upsert(key, payload) =>
+      upsertRouter.route(Put(key, payload), sender)
+      val actors = pendingUpsert.getOrElse(key, Nil)
+      almostEmptyTable(pendingUpsert + (key -> (sender() :: actors)))
+    case Query(key) => sender ! QueryAck(key, None)
+    case Count => sender ! CountAck(0)
+    case Delete(key) => sender ! DeleteAck(key)
+    // TODO Receive response for the first upsert
   }
 
   def nonEmptyTable(index: List[(String, ActorRef)]): Receive = ???
