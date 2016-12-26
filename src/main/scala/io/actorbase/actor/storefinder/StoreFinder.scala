@@ -67,18 +67,19 @@ class StoreFinder(val name: String) extends Actor {
   def emptyTable(): Receive = {
     // External interface
     case Upsert(key, payload) =>
-      upsertRouter.route(Put(key, payload), sender)
-      almostEmptyTable(Map(key -> List(sender())))
+      val u = uuid()
+      upsertRouter.route(Put(key, payload, uuid()), sender)
+      almostEmptyTable(Map(u -> sender()))
     case Query(key) => sender ! QueryAck(key, None)
     case Count => sender ! CountAck(0)
     case Delete(key) => sender ! DeleteAck(key)
   }
 
-  def almostEmptyTable(pendingUpsert: Map[String, List[ActorRef]]): Receive = {
+  def almostEmptyTable(pendingUpsert: Map[/*uuid*/String, ActorRef]): Receive = {
     case Upsert(key, payload) =>
-      upsertRouter.route(Put(key, payload), sender)
-      val actors = pendingUpsert.getOrElse(key, Nil)
-      almostEmptyTable(pendingUpsert + (key -> (sender() :: actors)))
+      val u = uuid()
+      upsertRouter.route(Put(key, payload, uuid), sender)
+      almostEmptyTable(pendingUpsert + (u -> sender()))
     case Query(key) => sender ! QueryAck(key, None)
     case Count => sender ! CountAck(0)
     case Delete(key) => sender ! DeleteAck(key)
@@ -86,6 +87,8 @@ class StoreFinder(val name: String) extends Actor {
   }
 
   def nonEmptyTable(index: List[(String, ActorRef)]): Receive = ???
+
+  private def uuid(): String = UUID.randomUUID().toString
 }
 
 object StoreFinder {

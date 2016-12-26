@@ -38,40 +38,40 @@ import io.actorbase.actor.storekeeper.Storekeeper.Response._
   * @since 1.0
   */
 class Storekeeper extends Actor {
-  override def receive = emptyMap
+  override def receive: Receive = emptyMap
 
   def emptyMap: Receive = {
-    case Put(k, v) => put(Map[String, Array[Byte]](), k, v)
-    case Get(k) => sender ! Item(k, None)
-    case Count => sender ! Size(0L)
-    case Remove(k) => sender ! RemoveAck(k)
+    case Put(k, v, u) => put(Map[String, Array[Byte]](), k, v, u)
+    case Get(k, u) => sender ! Item(k, None, u)
+    case Count(u) => sender ! Size(0L, u)
+    case Remove(k, u) => sender ! RemoveAck(k, u)
   }
 
   def nonEmptyMap(store: Map[String, Array[Byte]]): Receive = {
-    case Put(k, v) => put(store, k, v)
-    case Get(k) => sender ! Item(k, store.get(k))
-    case Remove(k) => remove(store, k)
-    case Count => sender ! Size(store.size)
+    case Put(k, v, u) => put(store, k, v, u)
+    case Get(k, u) => sender ! Item(k, store.get(k), u)
+    case Remove(k, u) => remove(store, k, u)
+    case Count(u) => sender ! Size(store.size, u)
   }
 
-  private def put(store: Map[String, Array[Byte]], key: String, value: Array[Byte]) = {
+  private def put(store: Map[String, Array[Byte]], key: String, value: Array[Byte], uuid: String) = {
     try {
       if (key != null) {
         val newStore = store + (Objects.requireNonNull(key) -> value)
-        sender ! PutAck(key)
+        sender ! PutAck(key, uuid)
         context.become(nonEmptyMap(newStore))
       } else {
-        sender ! PutNAck(Storekeeper.KeyNull)
+        sender ! PutNAck(key, Storekeeper.KeyNull, uuid)
       }
     } catch {
       case ex: Exception =>
-        sender ! PutNAck(ex.getMessage)
+        sender ! PutNAck(key, ex.getMessage, uuid)
     }
   }
 
-  private def remove(store: Map[String, Array[Byte]], key: String) = {
+  private def remove(store: Map[String, Array[Byte]], key: String, uuid: String) = {
     val newStore = store - key
-    sender ! RemoveAck(key)
+    sender ! RemoveAck(key, uuid)
     context.become {
       if (newStore.isEmpty) emptyMap
       else nonEmptyMap(newStore)
@@ -83,7 +83,9 @@ object Storekeeper {
 
   val KeyNull = "Key cannot be null"
 
-  sealed trait Message
+  sealed trait Message {
+    val uuid: String
+  }
 
   // Input messages
   object Request {
@@ -94,24 +96,24 @@ object Storekeeper {
       * @param key  A key
       * @param byte A value
       */
-    case class Put(key: String, byte: Array[Byte]) extends Message
+    case class Put(key: String, byte: Array[Byte], uuid: String) extends Message
 
     /**
       * Request for the value associated to {{key}}.
       * @param key A key
       */
-    case class Get(key: String) extends Message
+    case class Get(key: String, uuid: String) extends Message
 
     /**
       * Request for the deletion of the value associated to {{key}}.
       * @param key A key
       */
-    case class Remove(key: String) extends Message
+    case class Remove(key: String, uuid: String) extends Message
 
     /**
       * Request for the actual size of the map.
       */
-    case object Count extends Message
+    case class Count(uuid: String) extends Message
   }
 
   // Output messages
@@ -121,18 +123,18 @@ object Storekeeper {
       * Positive response for the upsert request relative to {{key}}.
       * @param k The key just upserted
       */
-    case class PutAck(k: String) extends Message
+    case class PutAck(k: String, uuid: String) extends Message
 
     /**
       * Negative response for the upsert request relative to {{key}}.
       * @param msg Error message received during upsertion
       */
-    case class PutNAck(msg: String) extends Message
+    case class PutNAck(key: String, msg: String, uuid: String) extends Message
 
-    case class Item(key: String, value: Option[Array[Byte]]) extends Message
+    case class Item(key: String, value: Option[Array[Byte]], uuid: String) extends Message
 
-    case class Size(s: Long) extends Message
+    case class Size(s: Long, uuid: String) extends Message
 
-    case class RemoveAck(key: String)
+    case class RemoveAck(key: String, uuid: String) extends Message
   }
 }
