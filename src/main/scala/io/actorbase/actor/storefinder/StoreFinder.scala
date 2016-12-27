@@ -6,9 +6,10 @@ import akka.actor.{Actor, ActorRef, Props}
 import akka.routing.{ActorRefRoutee, BroadcastRoutingLogic, Router, SmallestMailboxRoutingLogic}
 import io.actorbase.actor.storefinder.StoreFinder.NumberOfPartitions
 import io.actorbase.actor.storefinder.StoreFinder.Request.{Count, Delete, Query, Upsert}
-import io.actorbase.actor.storefinder.StoreFinder.Response.{CountAck, DeleteAck, QueryAck}
+import io.actorbase.actor.storefinder.StoreFinder.Response.{CountAck, DeleteAck, QueryAck, UpsertAck}
 import io.actorbase.actor.storekeeper.Storekeeper
 import io.actorbase.actor.storekeeper.Storekeeper.Request.Put
+import io.actorbase.actor.storekeeper.Storekeeper.Response.PutAck
 
 /**
   * The MIT License (MIT)
@@ -78,15 +79,19 @@ class StoreFinder(val name: String) extends Actor {
   def almostEmptyTable(pendingUpsert: Map[/*uuid*/String, ActorRef]): Receive = {
     case Upsert(key, payload) =>
       val u = uuid()
-      upsertRouter.route(Put(key, payload, uuid), sender)
+      upsertRouter.route(Put(key, payload, u), sender)
       almostEmptyTable(pendingUpsert + (u -> sender()))
     case Query(key) => sender ! QueryAck(key, None)
     case Count => sender ! CountAck(0)
     case Delete(key) => sender ! DeleteAck(key)
-    // TODO Receive response for the first upsert
+    case PutAck(key, u) =>
+      Option(pendingUpsert.getOrElse(u, null)).collect {
+        case senderActor => senderActor ! UpsertAck(key)
+      }
+      context.become(nonEmptyTable(pendingUpsert))
   }
 
-  def nonEmptyTable(index: List[(String, ActorRef)]): Receive = ???
+  def nonEmptyTable(pendingUpsert: Map[/*uuid*/String, ActorRef]): Receive = ???
 
   private def uuid(): String = UUID.randomUUID().toString
 }
