@@ -9,7 +9,7 @@ import io.actorbase.actor.storefinder.StoreFinder.Request.{Count, Delete, Query,
 import io.actorbase.actor.storefinder.StoreFinder.Response.{CountAck, DeleteAck, QueryAck, UpsertAck}
 import io.actorbase.actor.storekeeper.Storekeeper
 import io.actorbase.actor.storekeeper.Storekeeper.Request.Put
-import io.actorbase.actor.storekeeper.Storekeeper.Response.PutAck
+import io.actorbase.actor.storekeeper.Storekeeper.Response.{PutAck, PutNAck}
 
 /**
   * The MIT License (MIT)
@@ -68,9 +68,9 @@ class StoreFinder(val name: String) extends Actor {
   def emptyTable(): Receive = {
     // External interface
     case Upsert(key, payload) =>
-      val u = uuid()
-      upsertRouter.route(Put(key, payload, uuid()), sender)
-      almostEmptyTable(Map(u -> sender()))
+      val id = uuid()
+      upsertRouter.route(Put(key, payload, id), self)
+      context.become(almostEmptyTable(Map(id -> sender())))
     case Query(key) => sender ! QueryAck(key, None)
     case Count => sender ! CountAck(0)
     case Delete(key) => sender ! DeleteAck(key)
@@ -79,16 +79,20 @@ class StoreFinder(val name: String) extends Actor {
   def almostEmptyTable(pendingUpsert: Map[/*uuid*/String, ActorRef]): Receive = {
     case Upsert(key, payload) =>
       val u = uuid()
-      upsertRouter.route(Put(key, payload, u), sender)
-      almostEmptyTable(pendingUpsert + (u -> sender()))
+      upsertRouter.route(Put(key, payload, u), self)
+      context.become(almostEmptyTable(pendingUpsert + (u -> sender())))
     case Query(key) => sender ! QueryAck(key, None)
     case Count => sender ! CountAck(0)
     case Delete(key) => sender ! DeleteAck(key)
     case PutAck(key, u) =>
-      Option(pendingUpsert.getOrElse(u, null)).collect {
+      pendingUpsert.get(u).collect {
         case senderActor => senderActor ! UpsertAck(key)
       }
-      context.become(nonEmptyTable(pendingUpsert))
+    case PutNAck(key, msg, id) =>
+      pendingUpsert.get(id).collect {
+        case senderActor => senderActor ! UpsertAck(key)
+      }
+      // context.become(nonEmptyTable(pendingUpsert))
   }
 
   def nonEmptyTable(pendingUpsert: Map[/*uuid*/String, ActorRef]): Receive = ???

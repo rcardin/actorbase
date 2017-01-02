@@ -2,9 +2,11 @@ package io.actorbase.actor.storefinder
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
-import io.actorbase.actor.storefinder.StoreFinder.Request.Count
-import io.actorbase.actor.storefinder.StoreFinder.Response.CountAck
+import io.actorbase.actor.storefinder.StoreFinder.Request.{Count, Delete, Query, Upsert}
+import io.actorbase.actor.storefinder.StoreFinder.Response.{CountAck, DeleteAck, QueryAck, UpsertAck}
+import org.apache.commons.lang3.SerializationUtils
 import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpecLike}
+import scala.concurrent.duration._
 
 /**
   * The MIT License (MIT)
@@ -47,11 +49,29 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
     TestKit.shutdownActorSystem(system)
   }
 
-  "A StoreFinder actor" must {
-    "send back size 0 for an empty table" in {
+  "An empty StoreFinder actor" must {
+    "send back size 0" in {
       val sf = TestActorRef(new StoreFinder("table"))
       sf ! Count
       expectMsg(CountAck(0L))
+    }
+
+    "send back an empty ack to a query" in {
+      val sf = TestActorRef(new StoreFinder("table"))
+      sf ! Query("key")
+      expectMsg(QueryAck("key", None))
+    }
+
+    "send an ack to a request of deletion" in {
+      val sf = TestActorRef(new StoreFinder("table"))
+      sf ! Delete("key")
+      expectMsg(DeleteAck("key"))
+    }
+
+    "send an ack relative to the upsertion a couple (key, value)" in {
+      val sf = TestActorRef(new StoreFinder("table"))
+      sf ! Upsert("key", SerializationUtils.serialize(42))
+      expectMsg(10 seconds , UpsertAck("key"))
     }
   }
 }
