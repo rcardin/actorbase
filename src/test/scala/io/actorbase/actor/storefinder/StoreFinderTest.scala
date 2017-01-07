@@ -7,8 +7,6 @@ import io.actorbase.actor.storefinder.StoreFinder.Response._
 import org.apache.commons.lang3.SerializationUtils
 import org.scalatest._
 
-import scala.concurrent.duration._
-
 /**
   * The MIT License (MIT)
   *
