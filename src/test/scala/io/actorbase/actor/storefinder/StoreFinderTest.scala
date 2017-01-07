@@ -9,7 +9,7 @@ import org.scalatest._
 
 /**
   * The MIT License (MIT)
-  *
+  *k
   * Copyright (c) 2015 Riccardo Cardin
   *
   * Permission is hereby granted, free of charge, to any person obtaining a copy
