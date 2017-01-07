@@ -6,10 +6,10 @@ import akka.actor.{Actor, ActorRef, Props}
 import akka.routing.{ActorRefRoutee, BroadcastRoutingLogic, Router, SmallestMailboxRoutingLogic}
 import io.actorbase.actor.storefinder.StoreFinder.NumberOfPartitions
 import io.actorbase.actor.storefinder.StoreFinder.Request.{Count, Delete, Query, Upsert}
-import io.actorbase.actor.storefinder.StoreFinder.Response.{CountAck, DeleteAck, QueryAck, UpsertAck}
+import io.actorbase.actor.storefinder.StoreFinder.Response._
 import io.actorbase.actor.storekeeper.Storekeeper
-import io.actorbase.actor.storekeeper.Storekeeper.Request.Put
-import io.actorbase.actor.storekeeper.Storekeeper.Response.{PutAck, PutNAck}
+import io.actorbase.actor.storekeeper.Storekeeper.Request.{Get, Put}
+import io.actorbase.actor.storekeeper.Storekeeper.Response.{Item, PutAck, PutNAck}
 
 /**
   * The MIT License (MIT)
@@ -76,29 +76,92 @@ class StoreFinder(val name: String) extends Actor {
     case Delete(key) => sender ! DeleteAck(key)
   }
 
-  def almostEmptyTable(pendingUpsert: Map[/*uuid*/String, ActorRef]): Receive = {
+  def almostEmptyTable(pendingUpserts: Map[/*uuid*/Long, ActorRef]): Receive = {
     case Upsert(key, payload) =>
       val u = uuid()
       upsertRouter.route(Put(key, payload, u), self)
-      context.become(almostEmptyTable(pendingUpsert + (u -> sender())))
+      context.become(almostEmptyTable(pendingUpserts + (u -> sender())))
     case Query(key) => sender ! QueryAck(key, None)
     case Count => sender ! CountAck(0)
     case Delete(key) => sender ! DeleteAck(key)
     case PutAck(key, u) =>
-      pendingUpsert.get(u).collect {
-        case senderActor => senderActor ! UpsertAck(key)
+      pendingUpserts.get(u).collect {
+        case senderActor =>
+          senderActor ! UpsertAck(key)
+          context.become(nonEmptyTable(pendingUpserts - u, Map(), 1))
       }
     case PutNAck(key, msg, id) =>
-      pendingUpsert.get(id).collect {
-        case senderActor => senderActor ! UpsertAck(key)
+      pendingUpserts.get(id).collect {
+        case senderActor =>
+          senderActor ! UpsertNAck(key, msg)
+          if (pendingUpserts.size == 1)
+            context.become(emptyTable())
+          else
+            context.become(almostEmptyTable(pendingUpserts - id))
       }
-      // context.become(nonEmptyTable(pendingUpsert))
   }
 
-  def nonEmptyTable(pendingUpsert: Map[/*uuid*/String, ActorRef]): Receive = ???
+  def nonEmptyTable(pendingUpserts: Map[/*uuid*/ Long, ActorRef],
+                    pendingQueries: Map[/*uuid*/ Long, QueryReq],
+                    count: Long): Receive = {
+    case Upsert(key, payload) =>
+      // FIXME There is a problem with upsert: We don't know where is the previous value
+      val id = uuid()
+      upsertRouter.route(Put(key, payload, id), self)
+      context.become(nonEmptyTable(pendingUpserts + (id -> sender()), pendingQueries, count))
+    case Query(key) =>
+      val id = uuid()
+      broadcastRouter.route(Get(key, id), self)
+      // FIXME Improve syntax
+      context.become(nonEmptyTable(pendingUpserts, pendingQueries + (id -> QueryReq(sender(), Nil)), count))
+    // FIXME This code is repeated
+    case PutAck(key, u) =>
+      pendingUpserts.get(u).collect {
+        case senderActor =>
+          senderActor ! UpsertAck(key)
+          context.become(nonEmptyTable(pendingUpserts - u, pendingQueries, count + 1))
+      }
+    case PutNAck(key, msg, id) =>
+      pendingUpserts.get(id).collect {
+        case senderActor =>
+          senderActor ! UpsertNAck(key, msg)
+          context.become(nonEmptyTable(pendingUpserts - id, pendingQueries, count))
+      }
+    case res: Item =>
+      context.become(nonEmptyTable(pendingUpserts, item(res, pendingQueries), count))
+  }
 
-  private def uuid(): String = UUID.randomUUID().toString
+  private def item(response: Item,
+                   queries: Map[Long, QueryReq]): Map[Long, QueryReq] = {
+    val Item(key, opt, id) = response
+    queries.get(id).collect {
+      case QueryReq(actor, responses) =>
+        val newResponses = opt :: responses
+        if (newResponses.length == NumberOfPartitions) {
+          val item = newResponses.collect {
+            case Some(tuple) => tuple
+          }.sortBy(_._2)
+            .headOption
+            .map(_._1)
+          actor ! QueryAck(key, item)
+          queries - id
+        } else {
+          queries + (id -> QueryReq(actor, newResponses))
+        }
+    }
+    queries
+  }
+
+  private def uuid(): Long = System.currentTimeMillis()
 }
+
+/**
+  * TODO
+  * @param sender
+  * @param responses
+  */
+case class QueryReq(sender: ActorRef,
+                    responses: List[Option[(Array[Byte], Long)]])
 
 object StoreFinder {
 
@@ -125,6 +188,8 @@ object StoreFinder {
       * @param k The key just upserted
       */
     case class UpsertAck(k: String) extends Message
+
+    case class UpsertNAck(k: String, msg: String) extends Message
 
     case class QueryAck(key: String, value: Option[Array[Byte]]) extends Message
 

@@ -3,9 +3,10 @@ package io.actorbase.actor.storefinder
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
 import io.actorbase.actor.storefinder.StoreFinder.Request.{Count, Delete, Query, Upsert}
-import io.actorbase.actor.storefinder.StoreFinder.Response.{CountAck, DeleteAck, QueryAck, UpsertAck}
+import io.actorbase.actor.storefinder.StoreFinder.Response._
 import org.apache.commons.lang3.SerializationUtils
-import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpecLike}
+import org.scalatest._
+
 import scala.concurrent.duration._
 
 /**
@@ -43,7 +44,16 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
   with ImplicitSender
   with WordSpecLike
   with MustMatchers
+  with BeforeAndAfter
   with BeforeAndAfterAll {
+
+  val Payload: Array[Byte] = SerializationUtils.serialize(42)
+
+  var sf: TestActorRef[StoreFinder] = _
+
+  before {
+    sf = TestActorRef(new StoreFinder("table"))
+  }
 
   override protected def afterAll(): Unit = {
     TestKit.shutdownActorSystem(system)
@@ -51,27 +61,44 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
 
   "An empty StoreFinder actor" must {
     "send back size 0" in {
-      val sf = TestActorRef(new StoreFinder("table"))
       sf ! Count
       expectMsg(CountAck(0L))
     }
 
     "send back an empty ack to a query" in {
-      val sf = TestActorRef(new StoreFinder("table"))
       sf ! Query("key")
       expectMsg(QueryAck("key", None))
     }
 
     "send an ack to a request of deletion" in {
-      val sf = TestActorRef(new StoreFinder("table"))
       sf ! Delete("key")
       expectMsg(DeleteAck("key"))
     }
 
     "send an ack relative to the upsertion a couple (key, value)" in {
-      val sf = TestActorRef(new StoreFinder("table"))
-      sf ! Upsert("key", SerializationUtils.serialize(42))
-      expectMsg(10 seconds , UpsertAck("key"))
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+    }
+
+    "send an error if the key is null" in {
+      sf ! Upsert(null, Payload)
+      expectMsg(UpsertNAck(null, "Key cannot be null"))
+    }
+  }
+
+  "A non empty StoreFinder actor" must {
+    "accept different upserts for different keys" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Upsert("key1", SerializationUtils.serialize(4242))
+      expectMsg(UpsertAck("key1"))
+    }
+
+    "send an error if the key is null" in {
+      sf ! Upsert(null, Payload)
+      expectMsg(UpsertNAck(null, "Key cannot be null"))
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
     }
   }
 }

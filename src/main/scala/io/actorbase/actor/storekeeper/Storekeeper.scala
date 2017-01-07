@@ -41,23 +41,23 @@ class Storekeeper extends Actor {
   override def receive: Receive = emptyMap
 
   def emptyMap: Receive = {
-    case Put(k, v, u) => put(Map[String, Array[Byte]](), k, v, u)
+    case Put(k, v, u) => put(Map[String, (Array[Byte], Long)](), k, v, u)
     case Get(k, u) => sender ! Item(k, None, u)
     case Count(u) => sender ! Size(0L, u)
     case Remove(k, u) => sender ! RemoveAck(k, u)
   }
 
-  def nonEmptyMap(store: Map[String, Array[Byte]]): Receive = {
+  def nonEmptyMap(store: Map[String, (Array[Byte], Long)]): Receive = {
     case Put(k, v, u) => put(store, k, v, u)
     case Get(k, u) => sender ! Item(k, store.get(k), u)
     case Remove(k, u) => remove(store, k, u)
     case Count(u) => sender ! Size(store.size, u)
   }
 
-  private def put(store: Map[String, Array[Byte]], key: String, value: Array[Byte], uuid: String) = {
+  private def put(store: Map[String, (Array[Byte], Long)], key: String, value: Array[Byte], uuid: Long) = {
     try {
       if (key != null) {
-        val newStore = store + (Objects.requireNonNull(key) -> value)
+        val newStore = store + (Objects.requireNonNull(key) -> (value, uuid))
         sender ! PutAck(key, uuid)
         context.become(nonEmptyMap(newStore))
       } else {
@@ -69,7 +69,7 @@ class Storekeeper extends Actor {
     }
   }
 
-  private def remove(store: Map[String, Array[Byte]], key: String, uuid: String) = {
+  private def remove(store: Map[String, (Array[Byte], Long)], key: String, uuid: Long) = {
     val newStore = store - key
     sender ! RemoveAck(key, uuid)
     context.become {
@@ -84,7 +84,7 @@ object Storekeeper {
   val KeyNull = "Key cannot be null"
 
   sealed trait Message {
-    val uuid: String
+    val uuid: Long
   }
 
   // Input messages
@@ -96,24 +96,24 @@ object Storekeeper {
       * @param key  A key
       * @param byte A value
       */
-    case class Put(key: String, byte: Array[Byte], uuid: String) extends Message
+    case class Put(key: String, byte: Array[Byte], uuid: Long) extends Message
 
     /**
       * Request for the value associated to {{key}}.
       * @param key A key
       */
-    case class Get(key: String, uuid: String) extends Message
+    case class Get(key: String, uuid: Long) extends Message
 
     /**
       * Request for the deletion of the value associated to {{key}}.
       * @param key A key
       */
-    case class Remove(key: String, uuid: String) extends Message
+    case class Remove(key: String, uuid: Long) extends Message
 
     /**
       * Request for the actual size of the map.
       */
-    case class Count(uuid: String) extends Message
+    case class Count(uuid: Long) extends Message
   }
 
   // Output messages
@@ -123,18 +123,18 @@ object Storekeeper {
       * Positive response for the upsert request relative to {{key}}.
       * @param k The key just upserted
       */
-    case class PutAck(k: String, uuid: String) extends Message
+    case class PutAck(k: String, uuid: Long) extends Message
 
     /**
       * Negative response for the upsert request relative to {{key}}.
       * @param msg Error message received during upsertion
       */
-    case class PutNAck(key: String, msg: String, uuid: String) extends Message
+    case class PutNAck(key: String, msg: String, uuid: Long) extends Message
 
-    case class Item(key: String, value: Option[Array[Byte]], uuid: String) extends Message
+    case class Item(key: String, value: Option[(Array[Byte], Long)], uuid: Long) extends Message
 
-    case class Size(s: Long, uuid: String) extends Message
+    case class Size(s: Long, uuid: Long) extends Message
 
-    case class RemoveAck(key: String, uuid: String) extends Message
+    case class RemoveAck(key: String, uuid: Long) extends Message
   }
 }

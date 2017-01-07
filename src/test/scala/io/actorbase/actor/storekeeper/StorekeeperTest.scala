@@ -5,7 +5,7 @@ import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
 import io.actorbase.actor.storekeeper.Storekeeper.Request.{Count, Get, Put, Remove}
 import io.actorbase.actor.storekeeper.Storekeeper.Response._
 import org.apache.commons.lang3.SerializationUtils
-import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpecLike}
+import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, MustMatchers, WordSpecLike}
 
 /**
   * The MIT License (MIT)
@@ -42,7 +42,14 @@ class StorekeeperTest extends TestKit(ActorSystem("testSystemStorekeeper"))
   with ImplicitSender
   with WordSpecLike
   with MustMatchers
+  with BeforeAndAfter
   with BeforeAndAfterAll {
+
+  var sk: TestActorRef[Storekeeper] = _
+
+  before {
+    sk = TestActorRef[Storekeeper]
+  }
 
   override protected def afterAll(): Unit = {
     TestKit.shutdownActorSystem(system)
@@ -50,81 +57,70 @@ class StorekeeperTest extends TestKit(ActorSystem("testSystemStorekeeper"))
 
   "A Storekeeper actor" must {
     "send back size 0 for an empty map" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Count("uuid")
-      expectMsg(Size(0L, "uuid"))
+      sk ! Count(1L)
+      expectMsg(Size(0L, 1L))
     }
 
     "put a new couple (key, value) inside an empty map" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Put("key", SerializationUtils.serialize(42), "uuid")
-      expectMsg(PutAck("key", "uuid"))
+      sk ! Put("key", SerializationUtils.serialize(42), 1L)
+      expectMsg(PutAck("key", 1L))
     }
 
     "receive an error message for a couple (null, value)" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Put("key", SerializationUtils.serialize(42), "uuid")
-      expectMsg(PutNAck("key", "Key cannot be null", "uuid"))
+      sk ! Put(null, SerializationUtils.serialize(42), 1L)
+      expectMsg(PutNAck(null, "Key cannot be null", 1L))
     }
 
     "upsert the value of a key already in the map" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Put("key", SerializationUtils.serialize(42), "uuid")
-      sk ! Put("key", SerializationUtils.serialize(18), "uuid")
-      sk ! Count("uuid")
-      expectMsgAllOf(PutAck("key", "uuid"), PutAck("key", "uuid"), Size(1, "uuid"))
+      sk ! Put("key", SerializationUtils.serialize(42), 1L)
+      sk ! Put("key", SerializationUtils.serialize(18), 2L)
+      sk ! Count(3L)
+      expectMsgAllOf(PutAck("key", 1L), PutAck("key", 2L), Size(1, 3L))
     }
 
     "be able to put two different keys in the same map" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Put("key1", SerializationUtils.serialize(42), "uuid")
-      sk ! Put("key2", SerializationUtils.serialize(18), "uuid")
-      sk ! Count("uuid")
-      expectMsgAllOf(PutAck("key1", "uuid"), PutAck("key2", "uuid"), Size(2, "uuid"))
+      sk ! Put("key1", SerializationUtils.serialize(42), 1L)
+      sk ! Put("key2", SerializationUtils.serialize(18), 2L)
+      sk ! Count(3L)
+      expectMsgAllOf(PutAck("key1", 1L), PutAck("key2", 2L), Size(2, 3L))
     }
 
     "get the value of a key just inserted" in {
-      val sk = TestActorRef[Storekeeper]
       val value = SerializationUtils.serialize(42)
-      sk ! Put("key1", value, "uuid")
-      sk ! Get("key1", "uuid")
-      sk ! Count("uuid")
-      expectMsgAllOf(PutAck("key1", "uuid"), Item("key1", Some(value), "uuid"), Size(1, "uuid"))
+      sk ! Put("key1", value, 1L)
+      sk ! Get("key1", 2L)
+      sk ! Count(3L)
+      expectMsgAllOf(PutAck("key1", 1L), Item("key1", Some((value, 1L)), 2L), Size(1, 3L))
     }
 
     "get a None if map is empty" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Get("key", "uuid")
-      expectMsg(Item("key", None, "uuid"))
+      sk ! Get("key", 1L)
+      expectMsg(Item("key", None, 1L))
     }
 
     "get a None if map does not contain the key" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Put("key", SerializationUtils.serialize(42), "uuid")
-      sk ! Get("key1", "uuid")
-      expectMsgAllOf(PutAck("key", "uuid"), Item("key1", None, "uuid"))
+      sk ! Put("key", SerializationUtils.serialize(42), 1L)
+      sk ! Get("key1", 2L)
+      expectMsgAllOf(PutAck("key", 1L), Item("key1", None, 2L))
     }
 
     "remove the value of a key present in the map" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Put("key", SerializationUtils.serialize(42), "uuid")
-      sk ! Remove("key", "uuid")
-      sk ! Count("uuid")
-      expectMsgAllOf(PutAck("key", "uuid"), RemoveAck("key", "uuid"), Size(0, "uuid"))
+      sk ! Put("key", SerializationUtils.serialize(42), 1L)
+      sk ! Remove("key", 2L)
+      sk ! Count(3L)
+      expectMsgAllOf(PutAck("key", 1L), RemoveAck("key", 2L), Size(0, 3L))
     }
 
     "receive an ack if the map is empty" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Remove("key", "uuid")
-      expectMsgAllOf(RemoveAck("key", "uuid"))
+      sk ! Remove("key", 1L)
+      expectMsgAllOf(RemoveAck("key", 1L))
     }
 
     "receive an ack if the map does not contain the key to be removed" in {
-      val sk = TestActorRef[Storekeeper]
-      sk ! Put("key", SerializationUtils.serialize(42), "uuid")
-      sk ! Remove("key1", "uuid")
-      sk ! Count("uuid")
-      expectMsgAllOf(PutAck("key", "uuid"), RemoveAck("key1", "uuid"), Size(1, "uuid"))
+      sk ! Put("key", SerializationUtils.serialize(42), 1L)
+      sk ! Remove("key1", 2L)
+      sk ! Count(3L)
+      expectMsgAllOf(PutAck("key", 1L), RemoveAck("key1", 2L), Size(1, 3L))
     }
   }
 }
