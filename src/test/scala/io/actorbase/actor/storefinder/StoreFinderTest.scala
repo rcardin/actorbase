@@ -46,6 +46,7 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
   with BeforeAndAfterAll {
 
   val Payload: Array[Byte] = SerializationUtils.serialize(42)
+  val Payload1: Array[Byte] = SerializationUtils.serialize(4242)
 
   var sf: TestActorRef[StoreFinder] = _
 
@@ -88,7 +89,7 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
     "accept different upserts for different keys" in {
       sf ! Upsert("key", Payload)
       expectMsg(UpsertAck("key"))
-      sf ! Upsert("key1", SerializationUtils.serialize(4242))
+      sf ! Upsert("key1", Payload1)
       expectMsg(UpsertAck("key1"))
     }
 
@@ -97,6 +98,71 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
       expectMsg(UpsertNAck(null, "Key cannot be null"))
       sf ! Upsert("key", Payload)
       expectMsg(UpsertAck("key"))
+    }
+
+    "accept different upserts for the same keys" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Upsert("key", Payload1)
+      expectMsg(UpsertAck("key"))
+    }
+
+    "count a single item" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Count
+      expectMsg(CountAck(1L))
+    }
+
+    "count a multiple items" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Upsert("key1", Payload)
+      expectMsg(UpsertAck("key1"))
+      sf ! Count
+      expectMsg(CountAck(2L))
+    }
+
+    "not count upserts that receives a nack" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Upsert(null, Payload)
+      expectMsg(UpsertNAck(null, "Key cannot be null"))
+      sf ! Count
+      expectMsg(CountAck(1L))
+    }
+
+    // FIXME This test will be available with the development of the normalization process
+    "count a single item for multiple upserts of the same key" taggedAs Tag(classOf[Ignore].getName) in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Count
+      expectMsg(CountAck(1L))
+    }
+
+    "get a previous upserted item in an empty table" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Query("key")
+      expectMsg(QueryAck("key", Option(Payload)))
+    }
+
+    "get a none for a key not present" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Query("key1")
+      expectMsg(QueryAck("key1", None))
+    }
+
+    "get a previous upserted item in a table containing more than one item" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Upsert("key1", Payload1)
+      expectMsg(UpsertAck("key1"))
+      sf ! Query("key")
+      expectMsg(QueryAck("key", Option(Payload)))
     }
   }
 }

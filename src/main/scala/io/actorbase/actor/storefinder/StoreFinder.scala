@@ -113,7 +113,9 @@ class StoreFinder(val name: String) extends Actor {
       val id = uuid()
       broadcastRouter.route(Get(key, id), self)
       // FIXME Improve syntax
-      context.become(nonEmptyTable(pendingUpserts, pendingQueries + (id -> QueryReq(sender(), Nil)), count))
+      context.become(nonEmptyTable(pendingUpserts,
+        pendingQueries + (id -> QueryReq(sender(), List[Option[(Array[Byte], Long)]]())), count))
+    case Count => sender ! CountAck(count)
     // FIXME This code is repeated
     case PutAck(key, u) =>
       pendingUpserts.get(u).collect {
@@ -134,22 +136,19 @@ class StoreFinder(val name: String) extends Actor {
   private def item(response: Item,
                    queries: Map[Long, QueryReq]): Map[Long, QueryReq] = {
     val Item(key, opt, id) = response
-    queries.get(id).collect {
-      case QueryReq(actor, responses) =>
-        val newResponses = opt :: responses
-        if (newResponses.length == NumberOfPartitions) {
-          val item = newResponses.collect {
-            case Some(tuple) => tuple
-          }.sortBy(_._2)
-            .headOption
-            .map(_._1)
-          actor ! QueryAck(key, item)
-          queries - id
-        } else {
-          queries + (id -> QueryReq(actor, newResponses))
-        }
+    val QueryReq(actor, responses) = queries.get(id).get
+    val newResponses = opt :: responses
+    if (newResponses.length == NumberOfPartitions) {
+      val item = newResponses.collect {
+        case Some(tuple) => tuple
+      }.sortBy(_._2)
+        .headOption
+        .map(_._1)
+      actor ! QueryAck(key, item)
+      queries - id
+    } else {
+      queries + (id -> QueryReq(actor, newResponses))
     }
-    queries
   }
 
   private def uuid(): Long = System.currentTimeMillis()
