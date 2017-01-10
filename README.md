@@ -1,5 +1,5 @@
 [![Build Status](https://travis-ci.org/rcardin/actorbase.svg?branch=master)](https://travis-ci.org/rcardin/actorbase)
-# actorbase
+# Actorbase
 Implementation of a key-value NoSQL database using the actor-model.
 
 The reference model is described in this post on my technical blog:
