@@ -164,5 +164,46 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
       sf ! Query("key")
       expectMsg(QueryAck("key", Option(Payload)))
     }
+
+    "send an ack relative to the deletion of a previously inserted key" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Delete("key")
+      expectMsg(DeleteAck("key"))
+      sf ! Query("key")
+      expectMsg(QueryAck("key", None))
+      sf ! Count
+      expectMsg(CountAck(0))
+    }
+
+    "send an ack relative to the deletion of a previously inserted key (more than one key present)" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Upsert("key1", Payload1)
+      expectMsg(UpsertAck("key1"))
+      sf ! Delete("key")
+      expectMsg(DeleteAck("key"))
+      sf ! Query("key")
+      expectMsg(QueryAck("key", None))
+      sf ! Query("key1")
+      expectMsg(QueryAck("key1", Some(Payload1)))
+      sf ! Count
+      expectMsg(CountAck(1))
+    }
+
+    "send an ack relative to the deletion of a previously inserted key and insert another key" in {
+      sf ! Upsert("key", Payload)
+      expectMsg(UpsertAck("key"))
+      sf ! Delete("key")
+      expectMsg(DeleteAck("key"))
+      sf ! Upsert("key1", Payload1)
+      expectMsg(UpsertAck("key1"))
+      sf ! Query("key")
+      expectMsg(QueryAck("key", None))
+      sf ! Query("key1")
+      expectMsg(QueryAck("key1", Some(Payload1)))
+      sf ! Count
+      expectMsg(CountAck(1))
+    }
   }
 }
