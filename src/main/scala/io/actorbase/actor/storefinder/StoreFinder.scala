@@ -70,80 +70,77 @@ class StoreFinder(val name: String) extends Actor {
     case Upsert(key, payload) =>
       val id = uuid()
       upsertRouter.route(Put(key, payload, id), self)
-      context.become(almostEmptyTable(Map(id -> sender())))
+      val initialState = StoreFinderState()
+      context.become(almostEmptyTable(initialState.addUpsert(id, sender())))
     case Query(key) => sender ! QueryAck(key, None)
     case Count => sender ! CountAck(0)
     case Delete(key) => sender ! DeleteAck(key)
   }
 
-  def almostEmptyTable(pendingUpserts: Map[/*uuid*/Long, ActorRef]): Receive = {
+  def almostEmptyTable(state: StoreFinderState): Receive = {
     case Upsert(key, payload) =>
       val u = uuid()
       upsertRouter.route(Put(key, payload, u), self)
-      context.become(almostEmptyTable(pendingUpserts + (u -> sender())))
+      context.become(almostEmptyTable(state.addUpsert(u, sender())))
     case Query(key) => sender ! QueryAck(key, None)
     case Count => sender ! CountAck(0)
     case Delete(key) => sender ! DeleteAck(key)
     case PutAck(key, u) =>
-      pendingUpserts.get(u).collect {
+      state.upserts.get(u).collect {
         case senderActor =>
           senderActor ! UpsertAck(key)
-          context.become(nonEmptyTable(pendingUpserts - u, Map(), Map(), 1))
+          context.become(nonEmptyTable(state.upsertAck(u)))
       }
     case PutNAck(key, msg, id) =>
-      pendingUpserts.get(id).collect {
+      state.upserts.get(id).collect {
         case senderActor =>
           senderActor ! UpsertNAck(key, msg)
-          if (pendingUpserts.size == 1)
+          if (state.upserts.size == 1)
             context.become(emptyTable())
           else
-            context.become(almostEmptyTable(pendingUpserts - id))
+            context.become(almostEmptyTable(state.upsertNAck(id)))
       }
   }
 
-  def nonEmptyTable(pendingUpserts: Map[/*uuid*/ Long, ActorRef],
-                    pendingQueries: Map[/*uuid*/ Long, QueryReq],
-                    pendingErasures: Map[/*uuid*/ Long, (Int, ActorRef)],
-                    count: Long): Receive = {
+  def nonEmptyTable(state: StoreFinderState): Receive = {
     case Upsert(key, payload) =>
       // FIXME There is a problem with upsert: We don't know where is the previous value
       val id = uuid()
       upsertRouter.route(Put(key, payload, id), self)
-      context.become(nonEmptyTable(pendingUpserts + (id -> sender()), pendingQueries, pendingErasures, count))
+      context.become(nonEmptyTable(state.addUpsert(id, sender())))
     case Query(key) =>
       val id = uuid()
       broadcastRouter.route(Get(key, id), self)
       // FIXME Improve syntax
-      context.become(nonEmptyTable(pendingUpserts,
-        pendingQueries + (id -> QueryReq(sender(), List[Option[(Array[Byte], Long)]]())), pendingErasures, count))
-    case Count => sender ! CountAck(count)
+      context.become(nonEmptyTable(state.addQuery(key, id, sender())))
+    case Count => sender ! CountAck(state.count)
     case Delete(key) =>
       val id = uuid()
       broadcastRouter.route(Remove(key, id), self)
-      context.become(nonEmptyTable(pendingUpserts, pendingQueries, pendingErasures + (id -> (0, sender())), count))
+      context.become(nonEmptyTable(state.addErasure(id, sender())))
     // FIXME This code is repeated
     case PutAck(key, u) =>
-      pendingUpserts.get(u).collect {
+      state.upserts.get(u).collect {
         case senderActor =>
           senderActor ! UpsertAck(key)
-          context.become(nonEmptyTable(pendingUpserts - u, pendingQueries, pendingErasures, count + 1))
+          context.become(nonEmptyTable(state.upsertAck(u)))
       }
     case PutNAck(key, msg, id) =>
-      pendingUpserts.get(id).collect {
+      state.upserts.get(id).collect {
         case senderActor =>
           senderActor ! UpsertNAck(key, msg)
-          context.become(nonEmptyTable(pendingUpserts - id, pendingQueries, pendingErasures, count))
+          context.become(nonEmptyTable(state.upsertNAck(id)))
       }
     case res: Item =>
-      context.become(nonEmptyTable(pendingUpserts, item(res, pendingQueries), pendingErasures, count))
+      context.become(nonEmptyTable(state.copy(queries = item(res, state.queries))))
     case rm: RemoveAck =>
-      val newPendingErasures = delete(rm, pendingErasures)
-      if (pendingErasures.size > newPendingErasures.size) {
+      val newPendingErasures = delete(rm, state.erasures)
+      if (state.erasures.size > newPendingErasures.size) {
         // FIXME By now, we do not return to empty table: implement a procedure that
         //       fixes any pending request on a table that became empty
-        context.become(nonEmptyTable(pendingUpserts, pendingQueries, newPendingErasures, count - 1))
+        context.become(nonEmptyTable(state.copy(erasures = newPendingErasures, count = state.count - 1)))
       } else {
-        context.become(nonEmptyTable(pendingUpserts, pendingQueries, newPendingErasures, count))
+        context.become(nonEmptyTable(state.copy(erasures = newPendingErasures)))
       }
   }
 
@@ -179,14 +176,6 @@ class StoreFinder(val name: String) extends Actor {
 
   private def uuid(): Long = System.currentTimeMillis()
 }
-
-/**
-  * TODO
-  * @param sender
-  * @param responses
-  */
-case class QueryReq(sender: ActorRef,
-                    responses: List[Option[(Array[Byte], Long)]])
 
 object StoreFinder {
 
