@@ -1,9 +1,10 @@
 package io.actorbase.actor.main
 
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.ActorSystem
+import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
 import io.actorbase.actor.main.Actorbase.Request.CreateCollection
-import io.actorbase.actor.main.Actorbase.Response.{CreateCollectionAck, CreateCollectionNAck}
-import io.actorbase.actor.storefinder.StoreFinder
+import io.actorbase.actor.main.Actorbase.Response.CreateCollectionAck
+import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, MustMatchers, WordSpecLike}
 
 /**
   * The MIT License (MIT)
@@ -30,42 +31,33 @@ import io.actorbase.actor.storefinder.StoreFinder
   */
 
 /**
-  * Access to actorbase from the outside
+  * Tests relative to StoreFinder actor.
   *
   * @author Riccardo Cardin
   * @version 1.0
   * @since 1.0
   */
-class Actorbase extends Actor {
+class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
+  with ImplicitSender
+  with WordSpecLike
+  with MustMatchers
+  with BeforeAndAfter
+  with BeforeAndAfterAll {
 
-  override def receive = emptyDatabase
+  var ab: TestActorRef[Actorbase] = _
 
-  def emptyDatabase: Receive = {
-    case CreateCollection(name) =>
-      try {
-        val table = context.actorOf(Props(new StoreFinder(name)))
-        sender() ! CreateCollectionAck(name)
-        context.become(nonEmptyDatabase(Map(name -> table)))
-      } catch {
-        case ex: Exception =>
-          sender() ! CreateCollectionNAck(name, ex.getMessage)
-      }
+  override protected def afterAll(): Unit = {
+    TestKit.shutdownActorSystem(system)
   }
 
-  def nonEmptyDatabase(tables: Map[String, ActorRef]): Receive = ???
-}
-
-object Actorbase {
-
-  sealed trait Message
-
-  // Request messages
-  object Request {
-    case class CreateCollection(name: String) extends Message
+  before {
+    ab = TestActorRef(new Actorbase)
   }
-  // Response messages
-  object Response {
-    case class CreateCollectionAck(name: String) extends Message
-    case class CreateCollectionNAck(name: String, error: String) extends Message
+
+  "An empty database" must {
+    "create a new table with a name" in {
+      ab ! CreateCollection("table")
+      expectMsg(CreateCollectionAck("table"))
+    }
   }
 }
