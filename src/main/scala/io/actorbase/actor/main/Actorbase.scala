@@ -1,8 +1,8 @@
 package io.actorbase.actor.main
 
 import akka.actor.{Actor, ActorRef, Props}
-import io.actorbase.actor.main.Actorbase.Request.CreateCollection
-import io.actorbase.actor.main.Actorbase.Response.{CreateCollectionAck, CreateCollectionNAck}
+import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Find}
+import io.actorbase.actor.main.Actorbase.Response.{CreateCollectionAck, CreateCollectionNAck, FindAck}
 import io.actorbase.actor.storefinder.StoreFinder
 
 /**
@@ -41,18 +41,26 @@ class Actorbase extends Actor {
   override def receive = emptyDatabase
 
   def emptyDatabase: Receive = {
-    case CreateCollection(name) =>
-      try {
-        val table = context.actorOf(Props(new StoreFinder(name)))
-        sender() ! CreateCollectionAck(name)
-        context.become(nonEmptyDatabase(Map(name -> table)))
-      } catch {
-        case ex: Exception =>
-          sender() ! CreateCollectionNAck(name, ex.getMessage)
-      }
+    case CreateCollection(name) => createCollection(name)
+    case Find(collection, id) => sender() ! FindAck(collection, id, None)
   }
 
-  def nonEmptyDatabase(tables: Map[String, ActorRef]): Receive = ???
+  def nonEmptyDatabase(tables: Map[String, ActorRef]): Receive = {
+    case CreateCollection(name) =>
+      if (!tables.isDefinedAt(name)) createCollection(name)
+      else sender() ! CreateCollectionNAck(name, s"Collection $name already exists")
+  }
+
+  private def createCollection(name: String) = {
+    try {
+      val table = context.actorOf(Props(new StoreFinder(name)))
+      sender() ! CreateCollectionAck(name)
+      context.become(nonEmptyDatabase(Map(name -> table)))
+    } catch {
+      case ex: Exception =>
+        sender() ! CreateCollectionNAck(name, ex.getMessage)
+    }
+  }
 }
 
 object Actorbase {
@@ -62,10 +70,12 @@ object Actorbase {
   // Request messages
   object Request {
     case class CreateCollection(name: String) extends Message
+    case class Find(collection: String, id: String) extends Message
   }
   // Response messages
   object Response {
     case class CreateCollectionAck(name: String) extends Message
     case class CreateCollectionNAck(name: String, error: String) extends Message
+    case class FindAck(collection: String, id: String, value: Option[Array[Byte]])
   }
 }
