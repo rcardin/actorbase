@@ -67,69 +67,64 @@ class StoreFinder(val name: String) extends Actor {
 
   def emptyTable(): Receive = {
     // External interface
-    case Upsert(key, payload) =>
-      val id = uuid()
-      upsertRouter.route(Put(key, payload, id), self)
+    case Upsert(key, payload, u) =>
+      upsertRouter.route(Put(key, payload, u), self)
       val initialState = StoreFinderState()
-      context.become(almostEmptyTable(initialState.addUpsert(id, sender())))
-    case Query(key) => sender ! QueryAck(key, None)
-    case Count => sender ! CountAck(0)
-    case Delete(key) => sender ! DeleteAck(key)
+      context.become(almostEmptyTable(initialState.addUpsert(u, sender())))
+    case Query(key, u) => sender ! QueryAck(key, None, u)
+    case Count(u) => sender ! CountAck(0, u)
+    case Delete(key, u) => sender ! DeleteAck(key, u)
   }
 
   def almostEmptyTable(state: StoreFinderState): Receive = {
-    case Upsert(key, payload) =>
-      val u = uuid()
+    case Upsert(key, payload, u) =>
       upsertRouter.route(Put(key, payload, u), self)
       context.become(almostEmptyTable(state.addUpsert(u, sender())))
-    case Query(key) => sender ! QueryAck(key, None)
-    case Count => sender ! CountAck(0)
-    case Delete(key) => sender ! DeleteAck(key)
+    case Query(key, u) => sender ! QueryAck(key, None, u)
+    case Count(u) => sender ! CountAck(0, u)
+    case Delete(key, u) => sender ! DeleteAck(key, u)
     case PutAck(key, u) =>
       state.upserts.get(u).collect {
         case senderActor =>
-          senderActor ! UpsertAck(key)
+          senderActor ! UpsertAck(key, u)
           context.become(nonEmptyTable(state.upsertAck(u)))
       }
-    case PutNAck(key, msg, id) =>
-      state.upserts.get(id).collect {
+    case PutNAck(key, msg, u) =>
+      state.upserts.get(u).collect {
         case senderActor =>
-          senderActor ! UpsertNAck(key, msg)
+          senderActor ! UpsertNAck(key, msg, u)
           if (state.upserts.size == 1)
             context.become(emptyTable())
           else
-            context.become(almostEmptyTable(state.upsertNAck(id)))
+            context.become(almostEmptyTable(state.upsertNAck(u)))
       }
   }
 
   def nonEmptyTable(state: StoreFinderState): Receive = {
-    case Upsert(key, payload) =>
+    case Upsert(key, payload, u) =>
       // FIXME There is a problem with upsert: We don't know where is the previous value
-      val id = uuid()
-      upsertRouter.route(Put(key, payload, id), self)
-      context.become(nonEmptyTable(state.addUpsert(id, sender())))
-    case Query(key) =>
-      val id = uuid()
-      broadcastRouter.route(Get(key, id), self)
+      upsertRouter.route(Put(key, payload, u), self)
+      context.become(nonEmptyTable(state.addUpsert(u, sender())))
+    case Query(key, u) =>
+      broadcastRouter.route(Get(key, u), self)
       // FIXME Improve syntax
-      context.become(nonEmptyTable(state.addQuery(key, id, sender())))
-    case Count => sender ! CountAck(state.count)
-    case Delete(key) =>
-      val id = uuid()
-      broadcastRouter.route(Remove(key, id), self)
-      context.become(nonEmptyTable(state.addErasure(id, sender())))
+      context.become(nonEmptyTable(state.addQuery(key, u, sender())))
+    case Count(u) => sender ! CountAck(state.count, u)
+    case Delete(key, u) =>
+      broadcastRouter.route(Remove(key, u), self)
+      context.become(nonEmptyTable(state.addErasure(u, sender())))
     // FIXME This code is repeated
     case PutAck(key, u) =>
       state.upserts.get(u).collect {
         case senderActor =>
-          senderActor ! UpsertAck(key)
+          senderActor ! UpsertAck(key, u)
           context.become(nonEmptyTable(state.upsertAck(u)))
       }
-    case PutNAck(key, msg, id) =>
-      state.upserts.get(id).collect {
+    case PutNAck(key, msg, u) =>
+      state.upserts.get(u).collect {
         case senderActor =>
-          senderActor ! UpsertNAck(key, msg)
-          context.become(nonEmptyTable(state.upsertNAck(id)))
+          senderActor ! UpsertNAck(key, msg, u)
+          context.become(nonEmptyTable(state.upsertNAck(u)))
       }
     case res: Item =>
       context.become(nonEmptyTable(state.copy(queries = item(res, state.queries))))
@@ -155,7 +150,7 @@ class StoreFinder(val name: String) extends Actor {
       }.sortBy(_._2)
         .headOption
         .map(_._1)
-      actor ! QueryAck(key, item)
+      actor ! QueryAck(key, item, id)
       queries - id
     } else {
       queries + (id -> QueryReq(actor, newResponses))
@@ -167,7 +162,7 @@ class StoreFinder(val name: String) extends Actor {
     val (responses, actor) = erasures.get(id).get
     val newResponses = responses + 1
     if (newResponses == NumberOfPartitions) {
-      actor ! DeleteAck(key)
+      actor ! DeleteAck(key, id)
       erasures - id
     } else {
       erasures + (id -> (newResponses, actor))
@@ -186,13 +181,13 @@ object StoreFinder {
   // Incoming messages
   object Request {
 
-    case class Upsert(key: String, byte: Array[Byte]) extends Message
+    case class Upsert(key: String, byte: Array[Byte], uuid: Long) extends Message
 
-    case class Query(key: String) extends Message
+    case class Query(key: String, uuid: Long) extends Message
 
-    case class Delete(key: String) extends Message
+    case class Delete(key: String, uuid: Long) extends Message
 
-    case object Count extends Message
+    case class Count(uuid: Long) extends Message
   }
 
   // Out coming messages
@@ -201,14 +196,14 @@ object StoreFinder {
       * Positive response for the upsert request relative to {{key}}.
       * @param k The key just upserted
       */
-    case class UpsertAck(k: String) extends Message
+    case class UpsertAck(k: String, uuid: Long) extends Message
 
-    case class UpsertNAck(k: String, msg: String) extends Message
+    case class UpsertNAck(k: String, msg: String, uuid: Long) extends Message
 
-    case class QueryAck(key: String, value: Option[Array[Byte]]) extends Message
+    case class QueryAck(key: String, value: Option[Array[Byte]], uuid: Long) extends Message
 
-    case class CountAck(s: Long) extends Message
+    case class CountAck(s: Long, uuid: Long) extends Message
 
-    case class DeleteAck(key: String)
+    case class DeleteAck(key: String, uuid: Long)
   }
 }

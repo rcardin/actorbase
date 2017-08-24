@@ -47,6 +47,8 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
 
   val Payload: Array[Byte] = SerializationUtils.serialize(42)
   val Payload1: Array[Byte] = SerializationUtils.serialize(4242)
+  val Uuid: Long = 1L
+  val Uuid1: Long = 2L
 
   var sf: TestActorRef[StoreFinder] = _
 
@@ -60,150 +62,150 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
 
   "An empty StoreFinder actor" must {
     "send back size 0" in {
-      sf ! Count
-      expectMsg(CountAck(0L))
+      sf ! Count(Uuid)
+      expectMsg(CountAck(0L, Uuid))
     }
 
     "send back an empty ack to a query" in {
-      sf ! Query("key")
-      expectMsg(QueryAck("key", None))
+      sf ! Query("key", Uuid)
+      expectMsg(QueryAck("key", None, Uuid))
     }
 
     "send an ack to a request of deletion" in {
-      sf ! Delete("key")
-      expectMsg(DeleteAck("key"))
+      sf ! Delete("key", Uuid)
+      expectMsg(DeleteAck("key", Uuid))
     }
 
     "send an ack relative to the upsertion a couple (key, value)" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
     }
 
     "send an error if the key is null" in {
-      sf ! Upsert(null, Payload)
-      expectMsg(UpsertNAck(null, "Key cannot be null"))
+      sf ! Upsert(null, Payload, Uuid)
+      expectMsg(UpsertNAck(null, "Key cannot be null", Uuid))
     }
   }
 
   "A non empty StoreFinder actor" must {
     "accept different upserts for different keys" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Upsert("key1", Payload1)
-      expectMsg(UpsertAck("key1"))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Upsert("key1", Payload1, Uuid1)
+      expectMsg(UpsertAck("key1", Uuid1))
     }
 
     "send an error if the key is null" in {
-      sf ! Upsert(null, Payload)
-      expectMsg(UpsertNAck(null, "Key cannot be null"))
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
+      sf ! Upsert(null, Payload, Uuid)
+      expectMsg(UpsertNAck(null, "Key cannot be null", Uuid))
+      sf ! Upsert("key", Payload, Uuid1)
+      expectMsg(UpsertAck("key", Uuid1))
     }
 
     "accept different upserts for the same keys" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Upsert("key", Payload1)
-      expectMsg(UpsertAck("key"))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Upsert("key", Payload1, Uuid1)
+      expectMsg(UpsertAck("key", Uuid1))
     }
 
     "count a single item" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Count
-      expectMsg(CountAck(1L))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Count(Uuid)
+      expectMsg(CountAck(1L, Uuid))
     }
 
     "count a multiple items" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Upsert("key1", Payload)
-      expectMsg(UpsertAck("key1"))
-      sf ! Count
-      expectMsg(CountAck(2L))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Upsert("key1", Payload, Uuid1)
+      expectMsg(UpsertAck("key1", Uuid1))
+      sf ! Count(Uuid)
+      expectMsg(CountAck(2L, Uuid))
     }
 
     "not count upserts that receives a nack" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Upsert(null, Payload)
-      expectMsg(UpsertNAck(null, "Key cannot be null"))
-      sf ! Count
-      expectMsg(CountAck(1L))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Upsert(null, Payload, Uuid1)
+      expectMsg(UpsertNAck(null, "Key cannot be null", Uuid1))
+      sf ! Count(Uuid)
+      expectMsg(CountAck(1L, Uuid))
     }
 
     // FIXME This test will be available with the development of the normalization process
     "count a single item for multiple upserts of the same key" taggedAs Tag(classOf[Ignore].getName) in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Count
-      expectMsg(CountAck(1L))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Upsert("key", Payload, Uuid1)
+      expectMsg(UpsertAck("key", Uuid1))
+      sf ! Count(Uuid)
+      expectMsg(CountAck(1L, Uuid))
     }
 
     "get a previous upserted item in an empty table" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Query("key")
-      expectMsg(QueryAck("key", Option(Payload)))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Query("key", Uuid)
+      expectMsg(QueryAck("key", Option(Payload), Uuid))
     }
 
     "get a none for a key not present" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Query("key1")
-      expectMsg(QueryAck("key1", None))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Query("key1", Uuid)
+      expectMsg(QueryAck("key1", None, Uuid))
     }
 
     "get a previous upserted item in a table containing more than one item" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Upsert("key1", Payload1)
-      expectMsg(UpsertAck("key1"))
-      sf ! Query("key")
-      expectMsg(QueryAck("key", Option(Payload)))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Upsert("key1", Payload1, Uuid1)
+      expectMsg(UpsertAck("key1", Uuid1))
+      sf ! Query("key", Uuid)
+      expectMsg(QueryAck("key", Option(Payload), Uuid))
     }
 
     "send an ack relative to the deletion of a previously inserted key" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Delete("key")
-      expectMsg(DeleteAck("key"))
-      sf ! Query("key")
-      expectMsg(QueryAck("key", None))
-      sf ! Count
-      expectMsg(CountAck(0))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Delete("key", Uuid)
+      expectMsg(DeleteAck("key", Uuid))
+      sf ! Query("key", Uuid)
+      expectMsg(QueryAck("key", None, Uuid))
+      sf ! Count(Uuid)
+      expectMsg(CountAck(0, Uuid))
     }
 
     "send an ack relative to the deletion of a previously inserted key (more than one key present)" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Upsert("key1", Payload1)
-      expectMsg(UpsertAck("key1"))
-      sf ! Delete("key")
-      expectMsg(DeleteAck("key"))
-      sf ! Query("key")
-      expectMsg(QueryAck("key", None))
-      sf ! Query("key1")
-      expectMsg(QueryAck("key1", Some(Payload1)))
-      sf ! Count
-      expectMsg(CountAck(1))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Upsert("key1", Payload1, Uuid1)
+      expectMsg(UpsertAck("key1", Uuid1))
+      sf ! Delete("key", Uuid)
+      expectMsg(DeleteAck("key", Uuid))
+      sf ! Query("key", Uuid)
+      expectMsg(QueryAck("key", None, Uuid))
+      sf ! Query("key1", Uuid1)
+      expectMsg(QueryAck("key1", Some(Payload1), Uuid1))
+      sf ! Count(Uuid)
+      expectMsg(CountAck(1, Uuid))
     }
 
     "send an ack relative to the deletion of a previously inserted key and insert another key" in {
-      sf ! Upsert("key", Payload)
-      expectMsg(UpsertAck("key"))
-      sf ! Delete("key")
-      expectMsg(DeleteAck("key"))
-      sf ! Upsert("key1", Payload1)
-      expectMsg(UpsertAck("key1"))
-      sf ! Query("key")
-      expectMsg(QueryAck("key", None))
-      sf ! Query("key1")
-      expectMsg(QueryAck("key1", Some(Payload1)))
-      sf ! Count
-      expectMsg(CountAck(1))
+      sf ! Upsert("key", Payload, Uuid)
+      expectMsg(UpsertAck("key", Uuid))
+      sf ! Delete("key", Uuid)
+      expectMsg(DeleteAck("key", Uuid))
+      sf ! Upsert("key1", Payload1, Uuid1)
+      expectMsg(UpsertAck("key1", Uuid1))
+      sf ! Query("key", Uuid)
+      expectMsg(QueryAck("key", None, Uuid))
+      sf ! Query("key1", Uuid1)
+      expectMsg(QueryAck("key1", Some(Payload1), Uuid1))
+      sf ! Count(Uuid)
+      expectMsg(CountAck(1, Uuid))
     }
   }
 }

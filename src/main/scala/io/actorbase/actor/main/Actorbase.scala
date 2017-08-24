@@ -1,9 +1,11 @@
+
 package io.actorbase.actor.main
 
 import akka.actor.{Actor, ActorRef, Props}
 import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Find}
 import io.actorbase.actor.main.Actorbase.Response.{CreateCollectionAck, CreateCollectionNAck, FindAck}
 import io.actorbase.actor.storefinder.StoreFinder
+import io.actorbase.actor.storefinder.StoreFinder.Request.Query
 
 /**
   * The MIT License (MIT)
@@ -49,6 +51,11 @@ class Actorbase extends Actor {
     case CreateCollection(name) =>
       if (!tables.isDefinedAt(name)) createCollection(name)
       else sender() ! CreateCollectionNAck(name, s"Collection $name already exists")
+    case Find(collection, id) =>
+      tables.get(id) match {
+        case Some(finder) => finder ! Query(id, 42) // FIXME
+        case None => sender() ! FindAck(collection, id, None)
+      }
   }
 
   private def createCollection(name: String) = {
@@ -77,5 +84,6 @@ object Actorbase {
     case class CreateCollectionAck(name: String) extends Message
     case class CreateCollectionNAck(name: String, error: String) extends Message
     case class FindAck(collection: String, id: String, value: Option[Array[Byte]])
+    case class FindNAck(collection: String, id: String, error: String)
   }
 }
