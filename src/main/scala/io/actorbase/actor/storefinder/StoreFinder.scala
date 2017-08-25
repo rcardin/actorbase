@@ -168,8 +168,6 @@ class StoreFinder(val name: String) extends Actor {
       erasures + (id -> (newResponses, actor))
     }
   }
-
-  private def uuid(): Long = System.currentTimeMillis()
 }
 
 object StoreFinder {

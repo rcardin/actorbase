@@ -1,9 +1,11 @@
 package io.actorbase.actor.main
 
+import akka.actor.ActorRef
+
 /**
   * The MIT License (MIT)
   *
-  * Copyright (c) 2015 Riccardo Cardin
+  * Copyright (c) 2015 - 2017 Riccardo Cardin
   *
   * Permission is hereby granted, free of charge, to any person obtaining a copy
   * of this software and associated documentation files (the "Software"), to deal
@@ -28,9 +30,18 @@ package io.actorbase.actor.main
   * Traces the pending requests from and to a Actorbase.
   *
   * @author Riccardo Cardin
-  * @version 1.0
-  * @since 1.0
+  * @version 0.1
+  * @since 0.1
   */
-case class ActorbaseState(someStuff: String) {
+case class ActorbaseState(queries: Map[Long, ActorRef]) {
+  def addQuery(uuid: Long, sender: ActorRef) = {
+    copy(queries = queries + (uuid -> sender))
+  }
+  def removeQuery(uuid: Long) = {
+    copy(queries = queries - uuid)
+  }
+}
 
+object ActorbaseState {
+  def apply(): ActorbaseState = new ActorbaseState(Map())
 }

@@ -6,6 +6,7 @@ import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Find}
 import io.actorbase.actor.main.Actorbase.Response.{CreateCollectionAck, CreateCollectionNAck, FindAck}
 import io.actorbase.actor.storefinder.StoreFinder
 import io.actorbase.actor.storefinder.StoreFinder.Request.Query
+import io.actorbase.actor.storefinder.StoreFinder.Response.QueryAck
 
 /**
   * The MIT License (MIT)
@@ -47,27 +48,35 @@ class Actorbase extends Actor {
     case Find(collection, id) => sender() ! FindAck(collection, id, None)
   }
 
-  def nonEmptyDatabase(tables: Map[String, ActorRef]): Receive = {
+  def nonEmptyDatabase(tables: Map[String, ActorRef], state: ActorbaseState): Receive = {
     case CreateCollection(name) =>
       if (!tables.isDefinedAt(name)) createCollection(name)
       else sender() ! CreateCollectionNAck(name, s"Collection $name already exists")
     case Find(collection, id) =>
       tables.get(id) match {
-        case Some(finder) => finder ! Query(id, 42) // FIXME
+        case Some(finder) =>
+          val u = uuid()
+          finder ! Query(id, u)
+          context.become(nonEmptyDatabase(tables, state.addQuery(u, sender())))
         case None => sender() ! FindAck(collection, id, None)
       }
+    case QueryAck(key, value, u) =>
+      // FIXME I lost the collection in this way :(
+      state.queries.get(u)foreach(actor => actor ! FindAck("", key, value))
   }
 
   private def createCollection(name: String) = {
     try {
       val table = context.actorOf(Props(new StoreFinder(name)))
       sender() ! CreateCollectionAck(name)
-      context.become(nonEmptyDatabase(Map(name -> table)))
+      context.become(nonEmptyDatabase(Map(name -> table), ActorbaseState()))
     } catch {
       case ex: Exception =>
         sender() ! CreateCollectionNAck(name, ex.getMessage)
     }
   }
+
+  private def uuid(): Long = System.currentTimeMillis()
 }
 
 object Actorbase {
