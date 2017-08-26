@@ -33,7 +33,13 @@ import akka.actor.ActorRef
   * @version 0.1
   * @since 0.1
   */
-case class ActorbaseState(queries: Map[Long, ActorRef]) {
+case class ActorbaseState(upserts: Map[Long, ActorRef], queries: Map[Long, ActorRef]) {
+  def addUpsert(uuid: Long, sender: ActorRef) = {
+    copy(upserts = upserts + (uuid -> sender))
+  }
+  def removeUpsert(uuid: Long) = {
+    copy(upserts = upserts - uuid)
+  }
   def addQuery(uuid: Long, sender: ActorRef) = {
     copy(queries = queries + (uuid -> sender))
   }

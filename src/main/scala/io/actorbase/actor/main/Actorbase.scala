@@ -2,16 +2,17 @@
 package io.actorbase.actor.main
 
 import akka.actor.{Actor, ActorRef, Props}
-import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Find}
-import io.actorbase.actor.main.Actorbase.Response.{CreateCollectionAck, CreateCollectionNAck, FindAck}
+import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Find, Upsert}
+import io.actorbase.actor.main.Actorbase.Response.{CreateCollectionAck, CreateCollectionNAck, FindAck, UpsertNAck}
 import io.actorbase.actor.storefinder.StoreFinder
+import io.actorbase.actor.storefinder.StoreFinder.Request
 import io.actorbase.actor.storefinder.StoreFinder.Request.Query
 import io.actorbase.actor.storefinder.StoreFinder.Response.QueryAck
 
 /**
   * The MIT License (MIT)
   *
-  * Copyright (c) 2015 Riccardo Cardin
+  * Copyright (c) 2015 - 2017 Riccardo Cardin
   *
   * Permission is hereby granted, free of charge, to any person obtaining a copy
   * of this software and associated documentation files (the "Software"), to deal
@@ -46,6 +47,8 @@ class Actorbase extends Actor {
   def emptyDatabase: Receive = {
     case CreateCollection(name) => createCollection(name)
     case Find(collection, id) => sender() ! FindAck(collection, id, None)
+    case Upsert(collection, id, value) =>
+      replyInsertOnNotExistingCollection(collection, id)
   }
 
   def nonEmptyDatabase(tables: Map[String, ActorRef], state: ActorbaseState): Receive = {
@@ -63,6 +66,19 @@ class Actorbase extends Actor {
     case QueryAck(key, value, u) =>
       // FIXME I lost the collection in this way :(
       state.queries.get(u)foreach(actor => actor ! FindAck("", key, value))
+    case Upsert(collection, id, value) =>
+      tables.get(id) match {
+        case Some(finder) =>
+          val u = uuid()
+          finder ! Request.Upsert(id, value, u)
+          context.become(nonEmptyDatabase(tables, state.addUpsert(u, sender())))
+        case None => replyInsertOnNotExistingCollection(collection, id)
+      }
+    // TODO Manage upsert responses
+  }
+
+  private def replyInsertOnNotExistingCollection(collection: String, id: String) = {
+    sender() ! UpsertNAck(collection, id, s"Collection $collection does not exist")
   }
 
   private def createCollection(name: String) = {
@@ -87,6 +103,7 @@ object Actorbase {
   object Request {
     case class CreateCollection(name: String) extends Message
     case class Find(collection: String, id: String) extends Message
+    case class Upsert(collection: String, id: String, value: Array[Byte]) extends
   }
   // Response messages
   object Response {
@@ -94,5 +111,7 @@ object Actorbase {
     case class CreateCollectionNAck(name: String, error: String) extends Message
     case class FindAck(collection: String, id: String, value: Option[Array[Byte]])
     case class FindNAck(collection: String, id: String, error: String)
+    case class UpsertAck(collection: String, id: String)
+    case class UpsertNAck(collection: String, id: String, error: String)
   }
 }
