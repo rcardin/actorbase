@@ -1,5 +1,7 @@
 package io.actorbase.actor.main
 
+import akka.actor.ActorRef
+
 /**
   * The MIT License (MIT)
   *
@@ -25,27 +27,6 @@ package io.actorbase.actor.main
   */
 
 /**
-  * Traces the pending requests from and to a Actorbase.
-  *
-  * @author Riccardo Cardin
-  * @version 0.1
-  * @since 0.1
+  * Represents a Collection within Actorbase
   */
-protected case class ActorbaseState(upserts: Map[Long, Collection], queries: Map[Long, Collection]) {
-  def addUpsert(uuid: Long, collection: Collection) = {
-    copy(upserts = upserts + (uuid -> collection))
-  }
-  def removeUpsert(uuid: Long) = {
-    copy(upserts = upserts - uuid)
-  }
-  def addQuery(uuid: Long, collection: Collection) = {
-    copy(queries = queries + (uuid -> collection))
-  }
-  def removeQuery(uuid: Long) = {
-    copy(queries = queries - uuid)
-  }
-}
-
-object ActorbaseState {
-  def apply(): ActorbaseState = new ActorbaseState(Map(), Map())
-}
+protected case class Collection(name: String, finder: ActorRef)

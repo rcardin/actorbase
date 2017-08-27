@@ -1,7 +1,7 @@
 
 package io.actorbase.actor.main
 
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.{Actor, Props}
 import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Find, Upsert}
 import io.actorbase.actor.main.Actorbase.Response.{CreateCollectionAck, CreateCollectionNAck, FindAck, UpsertNAck}
 import io.actorbase.actor.storefinder.StoreFinder
@@ -51,27 +51,27 @@ class Actorbase extends Actor {
       replyInsertOnNotExistingCollection(collection, id)
   }
 
-  def nonEmptyDatabase(tables: Map[String, ActorRef], state: ActorbaseState): Receive = {
+  def nonEmptyDatabase(tables: Map[String, Collection], state: ActorbaseState): Receive = {
     case CreateCollection(name) =>
       if (!tables.isDefinedAt(name)) createCollection(name)
       else sender() ! CreateCollectionNAck(name, s"Collection $name already exists")
-    case Find(collection, id) =>
+    case Find(coll, id) =>
       tables.get(id) match {
-        case Some(finder) =>
+        case Some(collection) =>
           val u = uuid()
-          finder ! Query(id, u)
-          context.become(nonEmptyDatabase(tables, state.addQuery(u, sender())))
-        case None => sender() ! FindAck(collection, id, None)
+          collection.finder ! Query(id, u)
+          context.become(nonEmptyDatabase(tables, state.addQuery(u, collection)))
+        case None => sender() ! FindAck(coll, id, None)
       }
     case QueryAck(key, value, u) =>
-      // FIXME I lost the collection in this way :(
-      state.queries.get(u)foreach(actor => actor ! FindAck("", key, value))
+      state.queries.get(u)foreach(collection =>
+        collection.finder ! FindAck(collection.name, key, value))
     case Upsert(collection, id, value) =>
       tables.get(id) match {
-        case Some(finder) =>
+        case Some(collection) =>
           val u = uuid()
-          finder ! Request.Upsert(id, value, u)
-          context.become(nonEmptyDatabase(tables, state.addUpsert(u, sender())))
+          collection.finder ! Request.Upsert(id, value, u)
+          context.become(nonEmptyDatabase(tables, state.addUpsert(u, collection)))
         case None => replyInsertOnNotExistingCollection(collection, id)
       }
     // TODO Manage upsert responses
@@ -85,7 +85,7 @@ class Actorbase extends Actor {
     try {
       val table = context.actorOf(Props(new StoreFinder(name)))
       sender() ! CreateCollectionAck(name)
-      context.become(nonEmptyDatabase(Map(name -> table), ActorbaseState()))
+      context.become(nonEmptyDatabase(Map(name -> Collection(name, table)), ActorbaseState()))
     } catch {
       case ex: Exception =>
         sender() ! CreateCollectionNAck(name, ex.getMessage)
