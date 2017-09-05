@@ -3,11 +3,11 @@ package io.actorbase.actor.main
 
 import akka.actor.{Actor, Props}
 import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Find, Upsert}
-import io.actorbase.actor.main.Actorbase.Response.{CreateCollectionAck, CreateCollectionNAck, FindAck, UpsertNAck}
+import io.actorbase.actor.main.Actorbase.Response._
 import io.actorbase.actor.storefinder.StoreFinder
-import io.actorbase.actor.storefinder.StoreFinder.Request
 import io.actorbase.actor.storefinder.StoreFinder.Request.Query
 import io.actorbase.actor.storefinder.StoreFinder.Response.QueryAck
+import io.actorbase.actor.storefinder.StoreFinder.{Request, Response}
 
 /**
   * The MIT License (MIT)
@@ -64,8 +64,10 @@ class Actorbase extends Actor {
         case None => sender() ! FindAck(coll, id, None)
       }
     case QueryAck(key, value, u) =>
-      state.queries.get(u)foreach(collection =>
+      val (maybeColl, newState) = state.removeQuery(u)
+      maybeColl foreach(collection =>
         collection.finder ! FindAck(collection.name, key, value))
+      context.become(nonEmptyDatabase(tables, newState))
     case Upsert(collection, id, value) =>
       tables.get(id) match {
         case Some(collection) =>
@@ -74,7 +76,16 @@ class Actorbase extends Actor {
           context.become(nonEmptyDatabase(tables, state.addUpsert(u, collection)))
         case None => replyInsertOnNotExistingCollection(collection, id)
       }
-    // TODO Manage upsert responses
+    case Response.UpsertNAck(key, msg, u) =>
+      val (maybeColl, newState) = state.removeUpsert(u)
+      maybeColl foreach(collection =>
+        collection.finder ! UpsertNAck(collection.name, key, msg))
+      context.become(nonEmptyDatabase(tables, newState))
+    case Response.UpsertAck(key, u) =>
+      val (maybeColl, newState) = state.removeUpsert(u)
+      maybeColl foreach(collection =>
+        collection.finder ! UpsertAck(collection.name, key))
+      context.become(nonEmptyDatabase(tables, newState))
   }
 
   private def replyInsertOnNotExistingCollection(collection: String, id: String) = {
@@ -101,17 +112,28 @@ object Actorbase {
 
   // Request messages
   object Request {
+
     case class CreateCollection(name: String) extends Message
+
     case class Find(collection: String, id: String) extends Message
-    case class Upsert(collection: String, id: String, value: Array[Byte]) extends
+
+    case class Upsert(collection: String, id: String, value: Array[Byte]) extends Message
+
   }
   // Response messages
   object Response {
+
     case class CreateCollectionAck(name: String) extends Message
+
     case class CreateCollectionNAck(name: String, error: String) extends Message
-    case class FindAck(collection: String, id: String, value: Option[Array[Byte]])
-    case class FindNAck(collection: String, id: String, error: String)
-    case class UpsertAck(collection: String, id: String)
-    case class UpsertNAck(collection: String, id: String, error: String)
+
+    case class FindAck(collection: String, id: String, value: Option[Array[Byte]]) extends Message
+
+    case class FindNAck(collection: String, id: String, error: String) extends Message
+
+    case class UpsertAck(collection: String, id: String) extends Message
+
+    case class UpsertNAck(collection: String, id: String, error: String) extends Message
+
   }
 }

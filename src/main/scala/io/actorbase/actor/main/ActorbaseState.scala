@@ -35,14 +35,14 @@ protected case class ActorbaseState(upserts: Map[Long, Collection], queries: Map
   def addUpsert(uuid: Long, collection: Collection) = {
     copy(upserts = upserts + (uuid -> collection))
   }
-  def removeUpsert(uuid: Long) = {
-    copy(upserts = upserts - uuid)
+  def removeUpsert(uuid: Long): (Option[Collection], ActorbaseState) = {
+    (upserts.get(uuid), copy(upserts = upserts - uuid))
   }
   def addQuery(uuid: Long, collection: Collection) = {
     copy(queries = queries + (uuid -> collection))
   }
-  def removeQuery(uuid: Long) = {
-    copy(queries = queries - uuid)
+  def removeQuery(uuid: Long): (Option[Collection], ActorbaseState) = {
+    (queries.get(uuid), copy(queries = queries - uuid))
   }
 }
 
