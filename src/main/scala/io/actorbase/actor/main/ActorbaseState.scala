@@ -31,21 +31,29 @@ package io.actorbase.actor.main
   * @version 0.1
   * @since 0.1
   */
-protected case class ActorbaseState(upserts: Map[Long, Collection], queries: Map[Long, Collection]) {
-  def addUpsert(uuid: Long, collection: Collection) = {
+protected case class ActorbaseState(upserts: Map[Long, Collection],
+                                    queries: Map[Long, Collection],
+                                    deletions: Map[Long, Collection]) {
+  def addUpsert(uuid: Long, collection: Collection): ActorbaseState = {
     copy(upserts = upserts + (uuid -> collection))
   }
   def removeUpsert(uuid: Long): (Option[Collection], ActorbaseState) = {
     (upserts.get(uuid), copy(upserts = upserts - uuid))
   }
-  def addQuery(uuid: Long, collection: Collection) = {
+  def addQuery(uuid: Long, collection: Collection): ActorbaseState = {
     copy(queries = queries + (uuid -> collection))
   }
   def removeQuery(uuid: Long): (Option[Collection], ActorbaseState) = {
     (queries.get(uuid), copy(queries = queries - uuid))
   }
+  def addDeletion(uuid: Long, collection: Collection): ActorbaseState = {
+    copy(deletions = deletions + (uuid -> collection))
+  }
+  def removeDeletion(uuid: Long): (Option[Collection], ActorbaseState) = {
+    (queries.get(uuid), copy(deletions = deletions - uuid))
+  }
 }
 
 object ActorbaseState {
-  def apply(): ActorbaseState = new ActorbaseState(Map(), Map())
+  def apply(): ActorbaseState = new ActorbaseState(Map(), Map(), Map())
 }

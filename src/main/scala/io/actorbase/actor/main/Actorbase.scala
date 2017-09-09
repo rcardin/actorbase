@@ -2,8 +2,9 @@
 package io.actorbase.actor.main
 
 import akka.actor.{Actor, Props}
-import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Find, Upsert}
+import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Delete, Find, Upsert}
 import io.actorbase.actor.main.Actorbase.Response._
+import io.actorbase.actor.main.Actorbase.uuid
 import io.actorbase.actor.storefinder.StoreFinder
 import io.actorbase.actor.storefinder.StoreFinder.Request.Query
 import io.actorbase.actor.storefinder.StoreFinder.Response.QueryAck
@@ -42,19 +43,29 @@ import io.actorbase.actor.storefinder.StoreFinder.{Request, Response}
   */
 class Actorbase extends Actor {
 
-  override def receive = emptyDatabase
+  override def receive: Receive = emptyDatabase
 
   def emptyDatabase: Receive = {
     case CreateCollection(name) => createCollection(name)
     case Find(collection, id) => sender() ! FindAck(collection, id, None)
-    case Upsert(collection, id, value) =>
+    case Upsert(collection, id, _) =>
       replyInsertOnNotExistingCollection(collection, id)
   }
 
   def nonEmptyDatabase(tables: Map[String, Collection], state: ActorbaseState): Receive = {
+    manageCreations(tables, state)
+      .orElse(manageQueries(tables, state))
+      .orElse(manageUpserts(tables, state))
+      .orElse(manageDeletions(tables, state))
+  }
+
+  private def manageCreations(tables: Map[String, Collection], state: ActorbaseState): Receive = {
     case CreateCollection(name) =>
       if (!tables.isDefinedAt(name)) createCollection(name)
       else sender() ! CreateCollectionNAck(name, s"Collection $name already exists")
+  }
+
+  private def manageQueries(tables: Map[String, Collection], state: ActorbaseState): Receive = {
     case Find(coll, id) =>
       tables.get(id) match {
         case Some(collection) =>
@@ -68,13 +79,16 @@ class Actorbase extends Actor {
       maybeColl foreach(collection =>
         collection.finder ! FindAck(collection.name, key, value))
       context.become(nonEmptyDatabase(tables, newState))
-    case Upsert(collection, id, value) =>
+  }
+
+  private def manageUpserts(tables: Map[String, Collection], state: ActorbaseState): Receive = {
+    case Upsert(coll, id, value) =>
       tables.get(id) match {
         case Some(collection) =>
           val u = uuid()
           collection.finder ! Request.Upsert(id, value, u)
           context.become(nonEmptyDatabase(tables, state.addUpsert(u, collection)))
-        case None => replyInsertOnNotExistingCollection(collection, id)
+        case None => replyInsertOnNotExistingCollection(coll, id)
       }
     case Response.UpsertNAck(key, msg, u) =>
       val (maybeColl, newState) = state.removeUpsert(u)
@@ -88,11 +102,27 @@ class Actorbase extends Actor {
       context.become(nonEmptyDatabase(tables, newState))
   }
 
-  private def replyInsertOnNotExistingCollection(collection: String, id: String) = {
+  private def manageDeletions(tables: Map[String, Collection], state: ActorbaseState): Receive = {
+    case Delete(coll, id) =>
+      tables.get(id) match {
+        case Some(collection) =>
+          val u = uuid()
+          collection.finder ! Request.Delete(id, u)
+          context.become(nonEmptyDatabase(tables, state.addDeletion(u, collection)))
+        case None => replyDeleteOnNotExistingCollection(coll, id)
+      }
+      // TODO Implement receiving of deletion responses
+  }
+
+  private def replyInsertOnNotExistingCollection(collection: String, id: String): Unit = {
     sender() ! UpsertNAck(collection, id, s"Collection $collection does not exist")
   }
 
-  private def createCollection(name: String) = {
+  private def replyDeleteOnNotExistingCollection(collection: String, id: String): Unit = {
+    sender() ! DeleteNAck(collection, id, s"Collection $collection does not exist")
+  }
+
+  private def createCollection(name: String): Unit = {
     try {
       val table = context.actorOf(Props(new StoreFinder(name)))
       sender() ! CreateCollectionAck(name)
@@ -102,11 +132,11 @@ class Actorbase extends Actor {
         sender() ! CreateCollectionNAck(name, ex.getMessage)
     }
   }
-
-  private def uuid(): Long = System.currentTimeMillis()
 }
 
 object Actorbase {
+
+  private def uuid(): Long = System.currentTimeMillis()
 
   sealed trait Message
 
@@ -118,6 +148,8 @@ object Actorbase {
     case class Find(collection: String, id: String) extends Message
 
     case class Upsert(collection: String, id: String, value: Array[Byte]) extends Message
+
+    case class Delete(collection: String, id: String) extends Message
 
   }
   // Response messages
@@ -135,5 +167,8 @@ object Actorbase {
 
     case class UpsertNAck(collection: String, id: String, error: String) extends Message
 
+    case class DeleteAck(collection: String, id: String) extends Message
+
+    case class DeleteNAck(collection: String, id: String, error: String) extends Message
   }
 }
