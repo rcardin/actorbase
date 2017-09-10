@@ -33,7 +33,8 @@ package io.actorbase.actor.main
   */
 protected case class ActorbaseState(upserts: Map[Long, Collection],
                                     queries: Map[Long, Collection],
-                                    deletions: Map[Long, Collection]) {
+                                    deletions: Map[Long, Collection],
+                                    counts: Map[Long, Collection]) {
   def addUpsert(uuid: Long, collection: Collection): ActorbaseState = {
     copy(upserts = upserts + (uuid -> collection))
   }
@@ -50,10 +51,16 @@ protected case class ActorbaseState(upserts: Map[Long, Collection],
     copy(deletions = deletions + (uuid -> collection))
   }
   def removeDeletion(uuid: Long): (Option[Collection], ActorbaseState) = {
-    (queries.get(uuid), copy(deletions = deletions - uuid))
+    (deletions.get(uuid), copy(deletions = deletions - uuid))
+  }
+  def addCount(uuid: Long, collection: Collection): ActorbaseState = {
+    copy(counts = counts + (uuid -> collection))
+  }
+  def removeCount(uuid: Long): (Option[Collection], ActorbaseState) = {
+    (counts.get(uuid), copy(counts = counts - uuid))
   }
 }
 
 object ActorbaseState {
-  def apply(): ActorbaseState = new ActorbaseState(Map(), Map(), Map())
+  def apply(): ActorbaseState = new ActorbaseState(Map(), Map(), Map(), Map())
 }

@@ -2,7 +2,7 @@
 package io.actorbase.actor.main
 
 import akka.actor.{Actor, Props}
-import io.actorbase.actor.main.Actorbase.Request.{CreateCollection, Delete, Find, Upsert}
+import io.actorbase.actor.main.Actorbase.Request._
 import io.actorbase.actor.main.Actorbase.Response._
 import io.actorbase.actor.main.Actorbase.uuid
 import io.actorbase.actor.storefinder.StoreFinder
@@ -50,6 +50,7 @@ class Actorbase extends Actor {
     case Find(collection, id) => sender() ! FindAck(collection, id, None)
     case Upsert(collection, id, _) =>
       replyInsertOnNotExistingCollection(collection, id)
+    case Count(collection) => sender() ! CountAck(collection, 0L)
   }
 
   def nonEmptyDatabase(tables: Map[String, Collection], state: ActorbaseState): Receive = {
@@ -57,6 +58,7 @@ class Actorbase extends Actor {
       .orElse(manageQueries(tables, state))
       .orElse(manageUpserts(tables, state))
       .orElse(manageDeletions(tables, state))
+      .orElse(manageCounts(tables, state))
   }
 
   private def manageCreations(tables: Map[String, Collection], state: ActorbaseState): Receive = {
@@ -67,7 +69,7 @@ class Actorbase extends Actor {
 
   private def manageQueries(tables: Map[String, Collection], state: ActorbaseState): Receive = {
     case Find(coll, id) =>
-      tables.get(id) match {
+      tables.get(coll) match {
         case Some(collection) =>
           val u = uuid()
           collection.finder ! Query(id, u)
@@ -83,7 +85,7 @@ class Actorbase extends Actor {
 
   private def manageUpserts(tables: Map[String, Collection], state: ActorbaseState): Receive = {
     case Upsert(coll, id, value) =>
-      tables.get(id) match {
+      tables.get(coll) match {
         case Some(collection) =>
           val u = uuid()
           collection.finder ! Request.Upsert(id, value, u)
@@ -104,14 +106,34 @@ class Actorbase extends Actor {
 
   private def manageDeletions(tables: Map[String, Collection], state: ActorbaseState): Receive = {
     case Delete(coll, id) =>
-      tables.get(id) match {
+      tables.get(coll) match {
         case Some(collection) =>
           val u = uuid()
           collection.finder ! Request.Delete(id, u)
           context.become(nonEmptyDatabase(tables, state.addDeletion(u, collection)))
         case None => replyDeleteOnNotExistingCollection(coll, id)
       }
-      // TODO Implement receiving of deletion responses
+    case Response.DeleteAck(key, u) =>
+      val (maybeColl, newState) = state.removeDeletion(u)
+      maybeColl foreach(collection =>
+        collection.finder ! DeleteAck(collection.name, key))
+      context.become(nonEmptyDatabase(tables, newState))
+  }
+
+  def manageCounts(tables: Map[String, Collection], state: ActorbaseState): Receive = {
+    case Count(coll) =>
+      tables.get(coll) match {
+        case Some(collection) =>
+          val u = uuid()
+          collection.finder ! Request.Count(u)
+          context.become(nonEmptyDatabase(tables, state.addCount(u, collection)))
+        case None => sender() ! CountAck(coll, 0)
+      }
+    case Response.CountAck(count, u) =>
+      val (maybeColl, newState) = state.removeCount(u)
+      maybeColl foreach(collection =>
+        collection.finder ! CountAck(collection.name, count))
+      context.become(nonEmptyDatabase(tables, newState))
   }
 
   private def replyInsertOnNotExistingCollection(collection: String, id: String): Unit = {
@@ -151,6 +173,7 @@ object Actorbase {
 
     case class Delete(collection: String, id: String) extends Message
 
+    case class Count(collection: String) extends Message
   }
   // Response messages
   object Response {
@@ -170,5 +193,7 @@ object Actorbase {
     case class DeleteAck(collection: String, id: String) extends Message
 
     case class DeleteNAck(collection: String, id: String, error: String) extends Message
+
+    case class CountAck(collection: String, count: Long)
   }
 }

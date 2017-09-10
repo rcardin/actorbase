@@ -41,8 +41,8 @@ import io.actorbase.actor.storekeeper.Storekeeper.Response.{Item, PutAck, PutNAc
   * FIXME Refactor
   *
   * @author Riccardo Cardin
-  * @version 1.0
-  * @since 1.0
+  * @version 0.1
+  * @since 0.1
   */
 class StoreFinder(val name: String) extends Actor {
 
@@ -142,7 +142,7 @@ class StoreFinder(val name: String) extends Actor {
   private def item(response: Item,
                    queries: Map[Long, QueryReq]): Map[Long, QueryReq] = {
     val Item(key, opt, id) = response
-    val QueryReq(actor, responses) = queries.get(id).get
+    val QueryReq(actor, responses) = queries(id)
     val newResponses = opt :: responses
     if (newResponses.length == NumberOfPartitions) {
       val item = newResponses.collect {
@@ -159,7 +159,7 @@ class StoreFinder(val name: String) extends Actor {
 
   private def delete(remove: RemoveAck, erasures: Map[/*uuid*/ Long, (Int, ActorRef)]): Map[Long, (Int, ActorRef)] = {
     val RemoveAck(key, id) = remove
-    val (responses, actor) = erasures.get(id).get
+    val (responses, actor) = erasures(id)
     val newResponses = responses + 1
     if (newResponses == NumberOfPartitions) {
       actor ! DeleteAck(key, id)
