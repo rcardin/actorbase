@@ -47,10 +47,10 @@ class Actorbase extends Actor {
 
   def emptyDatabase: Receive = {
     case CreateCollection(name) => createCollection(name)
-    case Find(collection, id) => sender() ! FindAck(collection, id, None)
-    case Upsert(collection, id, _) =>
-      replyInsertOnNotExistingCollection(collection, id)
-    case Count(collection) => sender() ! CountAck(collection, 0L)
+    case Find(collection, id) => replyFindOnNotExistingCollection(collection, id)
+    case Upsert(collection, id, _) => replyInsertOnNotExistingCollection(collection, id)
+    case Delete(collection, id) => replyDeleteOnNotExistingCollection(collection, id)
+    case Count(collection) => replyCountOnNotExistingCollection(collection)
   }
 
   def nonEmptyDatabase(tables: Map[String, Collection], state: ActorbaseState): Receive = {
@@ -136,12 +136,20 @@ class Actorbase extends Actor {
       context.become(nonEmptyDatabase(tables, newState))
   }
 
+  private def replyFindOnNotExistingCollection(collection: String, id: String): Unit = {
+    sender() ! FindNAck(collection, id, s"Collection $collection does not exist")
+  }
+
   private def replyInsertOnNotExistingCollection(collection: String, id: String): Unit = {
     sender() ! UpsertNAck(collection, id, s"Collection $collection does not exist")
   }
 
   private def replyDeleteOnNotExistingCollection(collection: String, id: String): Unit = {
     sender() ! DeleteNAck(collection, id, s"Collection $collection does not exist")
+  }
+
+  private def replyCountOnNotExistingCollection(collection: String): Unit = {
+    sender() ! CountNAck(collection, s"Collection $collection does not exist")
   }
 
   private def createCollection(name: String): Unit = {
@@ -195,5 +203,7 @@ object Actorbase {
     case class DeleteNAck(collection: String, id: String, error: String) extends Message
 
     case class CountAck(collection: String, count: Long)
+
+    case class CountNAck(collection: String, error: String) extends Message
   }
 }

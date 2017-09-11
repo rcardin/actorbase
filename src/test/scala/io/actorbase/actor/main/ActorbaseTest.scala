@@ -2,14 +2,14 @@ package io.actorbase.actor.main
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
-import io.actorbase.actor.main.Actorbase.Request.CreateCollection
-import io.actorbase.actor.main.Actorbase.Response.CreateCollectionAck
+import io.actorbase.actor.main.Actorbase.Request._
+import io.actorbase.actor.main.Actorbase.Response._
 import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, MustMatchers, WordSpecLike}
 
 /**
   * The MIT License (MIT)
   *
-  * Copyright (c) 2015 Riccardo Cardin
+  * Copyright (c) 2015 - 2017 Riccardo Cardin
   *
   * Permission is hereby granted, free of charge, to any person obtaining a copy
   * of this software and associated documentation files (the "Software"), to deal
@@ -31,11 +31,11 @@ import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, MustMatchers, WordSpecL
   */
 
 /**
-  * Tests relative to StoreFinder actor.
+  * Tests relative to Actorbase (main) actor.
   *
   * @author Riccardo Cardin
-  * @version 1.0
-  * @since 1.0
+  * @version 0.1
+  * @since 0.1
   */
 class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
   with ImplicitSender
@@ -58,6 +58,35 @@ class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
     "create a new table with a name" in {
       ab ! CreateCollection("table")
       expectMsg(CreateCollectionAck("table"))
+    }
+
+    "send an error for any find request" in {
+      ab ! Find("table", "key")
+      expectMsg(FindNAck("table", "key", "Collection table does not exist"))
+    }
+
+    "send an error for any upsert request" in {
+      ab ! Upsert("table", "key", Array())
+      expectMsg(UpsertNAck("table", "key", "Collection table does not exist"))
+    }
+
+    "send an error for any deletion request" in {
+      ab ! Delete("table", "key")
+      expectMsg(DeleteNAck("table", "key", "Collection table does not exist"))
+    }
+
+    "send an error for any count request" in {
+      ab ! Count("table")
+      expectMsg(CountNAck("table", "Collection table does not exist"))
+    }
+  }
+
+  "An non empty database" must {
+    "send an error if it tries to create the same collection more than once" in {
+      ab ! CreateCollection("table")
+      expectMsg(CreateCollectionAck("table"))
+      ab ! CreateCollection("table")
+      expectMsg(CreateCollectionNAck("table", "Collection table already exists"))
     }
   }
 }

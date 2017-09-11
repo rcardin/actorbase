@@ -9,8 +9,8 @@ import org.scalatest._
 
 /**
   * The MIT License (MIT)
-  *k
-  * Copyright (c) 2015 Riccardo Cardin
+  *
+  * Copyright (c) 2015 - 2017 Riccardo Cardin
   *
   * Permission is hereby granted, free of charge, to any person obtaining a copy
   * of this software and associated documentation files (the "Software"), to deal
@@ -35,8 +35,8 @@ import org.scalatest._
   * Tests relative to StoreFinder actor
   *
   * @author Riccardo Cardin
-  * @version 1.0
-  * @since 1.0
+  * @version 0.1
+  * @since 0.1
   */
 class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
   with ImplicitSender
