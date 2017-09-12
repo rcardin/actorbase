@@ -4,6 +4,7 @@ import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
 import io.actorbase.actor.main.Actorbase.Request._
 import io.actorbase.actor.main.Actorbase.Response._
+import org.apache.commons.lang3.SerializationUtils
 import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, MustMatchers, WordSpecLike}
 
 /**
@@ -31,13 +32,13 @@ import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, MustMatchers, WordSpecL
   */
 
 /**
-  * Tests relative to Actorbase (main) actor.
+  * Tests relative to an empty Actorbase (main) actor.
   *
   * @author Riccardo Cardin
   * @version 0.1
   * @since 0.1
   */
-class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
+class EmptyActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
   with ImplicitSender
   with WordSpecLike
   with MustMatchers
@@ -80,13 +81,55 @@ class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
       expectMsg(CountNAck("table", "Collection table does not exist"))
     }
   }
+}
+
+/**
+  * Tests relative to a not empty Actorbase (main) actor.
+  *
+  * @author Riccardo Cardin
+  * @version 0.1
+  * @since 0.1
+  */
+class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
+  with ImplicitSender
+  with WordSpecLike
+  with MustMatchers
+  with BeforeAndAfter
+  with BeforeAndAfterAll {
+
+  val Payload: Array[Byte] = SerializationUtils.serialize(42)
+
+  var ab: TestActorRef[Actorbase] = _
+
+  override protected def afterAll(): Unit = {
+    TestKit.shutdownActorSystem(system)
+  }
+
+  before {
+    ab = TestActorRef(new Actorbase)
+    createCollection("table")
+  }
 
   "An non empty database" must {
+
+    "be able to create two different collections" in {
+      ab ! CreateCollection("table1")
+      expectMsg(CreateCollectionAck("table1"))
+    }
+
     "send an error if it tries to create the same collection more than once" in {
-      ab ! CreateCollection("table")
-      expectMsg(CreateCollectionAck("table"))
       ab ! CreateCollection("table")
       expectMsg(CreateCollectionNAck("table", "Collection table already exists"))
     }
+
+    // "upsert some information into an existing collection" in {
+    //   ab ! Upsert("table", "key", Payload)
+    //   expectMsg(UpsertAck("table", "key"))
+    // }
+  }
+
+  private def createCollection(name: String) = {
+    ab ! CreateCollection(name)
+    expectMsg(CreateCollectionAck(name))
   }
 }
