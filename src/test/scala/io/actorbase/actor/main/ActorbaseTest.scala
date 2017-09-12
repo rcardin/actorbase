@@ -134,6 +134,11 @@ class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
       ab ! Upsert("table1", "key", Payload)
       expectMsg(UpsertNAck("table1", "key", "Collection table1 does not exist"))
     }
+
+    "send an error if the upsertion key is null" in {
+      ab ! Upsert("table", null, Payload)
+      expectMsg(UpsertNAck("table", null, "Key cannot be null"))
+    }
   }
 
   private def createCollection(name: String) = {
