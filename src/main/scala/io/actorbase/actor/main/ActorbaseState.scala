@@ -22,41 +22,39 @@ package io.actorbase.actor.main
   * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
   * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
   * SOFTWARE.
-  */
-
-/**
+  *
   * Traces the pending requests from and to a Actorbase.
   *
   * @author Riccardo Cardin
   * @version 0.1
   * @since 0.1
   */
-protected case class ActorbaseState(upserts: Map[Long, Collection],
-                                    queries: Map[Long, Collection],
-                                    deletions: Map[Long, Collection],
-                                    counts: Map[Long, Collection]) {
-  def addUpsert(uuid: Long, collection: Collection): ActorbaseState = {
-    copy(upserts = upserts + (uuid -> collection))
+protected case class ActorbaseState(upserts: Map[Long, ActorbaseRequest],
+                                    queries: Map[Long, ActorbaseRequest],
+                                    deletions: Map[Long, ActorbaseRequest],
+                                    counts: Map[Long, ActorbaseRequest]) {
+  def addUpsert(uuid: Long, request: ActorbaseRequest): ActorbaseState = {
+    copy(upserts = upserts + (uuid -> request))
   }
-  def removeUpsert(uuid: Long): (Option[Collection], ActorbaseState) = {
+  def removeUpsert(uuid: Long): (Option[ActorbaseRequest], ActorbaseState) = {
     (upserts.get(uuid), copy(upserts = upserts - uuid))
   }
-  def addQuery(uuid: Long, collection: Collection): ActorbaseState = {
-    copy(queries = queries + (uuid -> collection))
+  def addQuery(uuid: Long, request: ActorbaseRequest): ActorbaseState = {
+    copy(queries = queries + (uuid -> request))
   }
-  def removeQuery(uuid: Long): (Option[Collection], ActorbaseState) = {
+  def removeQuery(uuid: Long): (Option[ActorbaseRequest], ActorbaseState) = {
     (queries.get(uuid), copy(queries = queries - uuid))
   }
-  def addDeletion(uuid: Long, collection: Collection): ActorbaseState = {
-    copy(deletions = deletions + (uuid -> collection))
+  def addDeletion(uuid: Long, request: ActorbaseRequest): ActorbaseState = {
+    copy(deletions = deletions + (uuid -> request))
   }
-  def removeDeletion(uuid: Long): (Option[Collection], ActorbaseState) = {
+  def removeDeletion(uuid: Long): (Option[ActorbaseRequest], ActorbaseState) = {
     (deletions.get(uuid), copy(deletions = deletions - uuid))
   }
-  def addCount(uuid: Long, collection: Collection): ActorbaseState = {
-    copy(counts = counts + (uuid -> collection))
+  def addCount(uuid: Long, request: ActorbaseRequest): ActorbaseState = {
+    copy(counts = counts + (uuid -> request))
   }
-  def removeCount(uuid: Long): (Option[Collection], ActorbaseState) = {
+  def removeCount(uuid: Long): (Option[ActorbaseRequest], ActorbaseState) = {
     (counts.get(uuid), copy(counts = counts - uuid))
   }
 }

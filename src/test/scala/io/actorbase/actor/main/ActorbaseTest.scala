@@ -29,9 +29,7 @@ import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, MustMatchers, WordSpecL
   * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
   * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
   * SOFTWARE.
-  */
-
-/**
+  *
   * Tests relative to an empty Actorbase (main) actor.
   *
   * @author Riccardo Cardin
@@ -98,6 +96,7 @@ class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
   with BeforeAndAfterAll {
 
   val Payload: Array[Byte] = SerializationUtils.serialize(42)
+  val Payload1: Array[Byte] = SerializationUtils.serialize(4242)
 
   var ab: TestActorRef[Actorbase] = _
 
@@ -122,10 +121,19 @@ class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
       expectMsg(CreateCollectionNAck("table", "Collection table already exists"))
     }
 
-    // "upsert some information into an existing collection" in {
-    //   ab ! Upsert("table", "key", Payload)
-    //   expectMsg(UpsertAck("table", "key"))
-    // }
+    "upsert some information into an existing collection" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Upsert("table", "key1", Payload)
+      expectMsg(UpsertAck("table", "key1"))
+      ab ! Upsert("table", "key", Payload1)
+      expectMsg(UpsertAck("table", "key"))
+    }
+
+    "send an error in case of upsertion to an inexistent collection" in {
+      ab ! Upsert("table1", "key", Payload)
+      expectMsg(UpsertNAck("table1", "key", "Collection table1 does not exist"))
+    }
   }
 
   private def createCollection(name: String) = {

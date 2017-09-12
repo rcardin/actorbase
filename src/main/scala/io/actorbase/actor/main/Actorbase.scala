@@ -32,14 +32,12 @@ import io.actorbase.actor.storefinder.StoreFinder.{Request, Response}
   * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
   * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
   * SOFTWARE.
-  */
-
-/**
+  *
   * Access to actorbase from the outside
   *
   * @author Riccardo Cardin
-  * @version 1.0
-  * @since 1.0
+  * @version 0.1
+  * @since 0.1
   */
 class Actorbase extends Actor {
 
@@ -73,13 +71,13 @@ class Actorbase extends Actor {
         case Some(collection) =>
           val u = uuid()
           collection.finder ! Query(id, u)
-          context.become(nonEmptyDatabase(tables, state.addQuery(u, collection)))
+          context.become(nonEmptyDatabase(tables, state.addQuery(u, ActorbaseRequest(collection.name, sender()))))
         case None => sender() ! FindAck(coll, id, None)
       }
     case QueryAck(key, value, u) =>
-      val (maybeColl, newState) = state.removeQuery(u)
-      maybeColl foreach(collection =>
-        collection.finder ! FindAck(collection.name, key, value))
+      val (maybeReq, newState) = state.removeQuery(u)
+      maybeReq foreach(request =>
+        request.sender ! FindAck(request.collection, key, value))
       context.become(nonEmptyDatabase(tables, newState))
   }
 
@@ -89,18 +87,18 @@ class Actorbase extends Actor {
         case Some(collection) =>
           val u = uuid()
           collection.finder ! Request.Upsert(id, value, u)
-          context.become(nonEmptyDatabase(tables, state.addUpsert(u, collection)))
+          context.become(nonEmptyDatabase(tables, state.addUpsert(u, ActorbaseRequest(collection.name, sender()))))
         case None => replyInsertOnNotExistingCollection(coll, id)
       }
     case Response.UpsertNAck(key, msg, u) =>
-      val (maybeColl, newState) = state.removeUpsert(u)
-      maybeColl foreach(collection =>
-        collection.finder ! UpsertNAck(collection.name, key, msg))
+      val (maybeReq, newState) = state.removeUpsert(u)
+      maybeReq foreach(request =>
+        request.sender ! UpsertNAck(request.collection, key, msg))
       context.become(nonEmptyDatabase(tables, newState))
     case Response.UpsertAck(key, u) =>
-      val (maybeColl, newState) = state.removeUpsert(u)
-      maybeColl foreach(collection =>
-        collection.finder ! UpsertAck(collection.name, key))
+      val (maybeReq, newState) = state.removeUpsert(u)
+      maybeReq foreach(request =>
+        request.sender ! UpsertAck(request.collection, key))
       context.become(nonEmptyDatabase(tables, newState))
   }
 
@@ -110,13 +108,13 @@ class Actorbase extends Actor {
         case Some(collection) =>
           val u = uuid()
           collection.finder ! Request.Delete(id, u)
-          context.become(nonEmptyDatabase(tables, state.addDeletion(u, collection)))
+          context.become(nonEmptyDatabase(tables, state.addDeletion(u, ActorbaseRequest(collection.name, sender()))))
         case None => replyDeleteOnNotExistingCollection(coll, id)
       }
     case Response.DeleteAck(key, u) =>
-      val (maybeColl, newState) = state.removeDeletion(u)
-      maybeColl foreach(collection =>
-        collection.finder ! DeleteAck(collection.name, key))
+      val (maybeReq, newState) = state.removeDeletion(u)
+      maybeReq foreach(request =>
+        request.sender! DeleteAck(request.collection, key))
       context.become(nonEmptyDatabase(tables, newState))
   }
 
@@ -126,13 +124,13 @@ class Actorbase extends Actor {
         case Some(collection) =>
           val u = uuid()
           collection.finder ! Request.Count(u)
-          context.become(nonEmptyDatabase(tables, state.addCount(u, collection)))
+          context.become(nonEmptyDatabase(tables, state.addCount(u, ActorbaseRequest(collection.name, sender()))))
         case None => sender() ! CountAck(coll, 0)
       }
     case Response.CountAck(count, u) =>
-      val (maybeColl, newState) = state.removeCount(u)
-      maybeColl foreach(collection =>
-        collection.finder ! CountAck(collection.name, count))
+      val (maybeReq, newState) = state.removeCount(u)
+      maybeReq foreach(request =>
+        request.sender ! CountAck(request.collection, count))
       context.become(nonEmptyDatabase(tables, newState))
   }
 
