@@ -125,7 +125,7 @@ class Actorbase extends Actor {
           val u = uuid()
           collection.finder ! Request.Count(u)
           context.become(nonEmptyDatabase(tables, state.addCount(u, ActorbaseRequest(collection.name, sender()))))
-        case None => sender() ! CountAck(coll, 0)
+        case None => replyCountOnNotExistingCollection(coll)
       }
     case Response.CountAck(count, u) =>
       val (maybeReq, newState) = state.removeCount(u)

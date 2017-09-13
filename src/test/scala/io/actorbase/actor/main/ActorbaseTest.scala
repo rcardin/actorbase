@@ -139,6 +139,27 @@ class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
       ab ! Upsert("table", null, Payload)
       expectMsg(UpsertNAck("table", null, "Key cannot be null"))
     }
+
+    "count a single item in a collection" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Count("table")
+      expectMsg(CountAck("table", 1L))
+    }
+
+    "count a multiple items in a collection" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Upsert("table", "key1", Payload1)
+      expectMsg(UpsertAck("table", "key1"))
+      ab ! Count("table")
+      expectMsg(CountAck("table", 2L))
+    }
+
+    "send an error in case of count to an inexistent collection" in {
+      ab ! Count("table1")
+      expectMsg(CountNAck("table1", "Collection table1 does not exist"))
+    }
   }
 
   private def createCollection(name: String) = {
