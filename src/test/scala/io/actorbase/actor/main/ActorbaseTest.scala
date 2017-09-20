@@ -160,6 +160,103 @@ class ActorbaseTest extends TestKit(ActorSystem("testSystemActorbase"))
       ab ! Count("table1")
       expectMsg(CountNAck("table1", "Collection table1 does not exist"))
     }
+
+    "not count upserts that receives a nack" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Upsert("table", null, Payload1)
+      expectMsg(UpsertNAck("table", null, "Key cannot be null"))
+      ab ! Count("table")
+      expectMsg(CountAck("table", 1L))
+    }
+
+    "get a previous upserted item in an empty table" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Find("table", "key")
+      expectMsg(FindAck("table", "key", Option(Payload)))
+    }
+
+    "get a none for a key not present" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Find("table", "key1")
+      expectMsg(FindAck("table", "key1", None))
+    }
+
+    "send an error in case of find to an inexistent collection" in {
+      ab ! Find("table1", "key")
+      expectMsg(FindNAck("table1", "key", "Collection table1 does not exist"))
+    }
+
+    "get a previous upserted item in a table containing more than one item" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab! Upsert("table" ,"key1", Payload1)
+      expectMsg(UpsertAck("table" ,"key1"))
+      ab ! Find("table" ,"key")
+      expectMsg(FindAck("table", "key", Option(Payload)))
+    }
+
+    "send an error in case of deletion of an inexistent collection" in {
+      ab ! Delete("table1", "key")
+      expectMsg(DeleteNAck("table1", "key", "Collection table1 does not exist"))
+    }
+
+    "delete a previously inserted key" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Delete("table", "key")
+      expectMsg(DeleteAck("table", "key"))
+      ab ! Find("table", "key")
+      expectMsg(FindAck("table", "key", None))
+      ab ! Count("table")
+      expectMsg(CountAck("table", 0))
+    }
+
+    /*
+    // FIXME
+    "manage to delete a key that does not exist" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Delete("table", "key1")
+      expectMsg(DeleteAck("table", "key1"))
+      ab ! Find("table", "key")
+      expectMsg(FindAck("table", "key", Some(Payload)))
+      ab ! Count("table")
+      expectMsg(CountAck("table", 1))
+    }
+    */
+
+    "delete a previously inserted key (more than one key present)" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Upsert("table", "key1", Payload1)
+      expectMsg(UpsertAck("table", "key1"))
+      ab ! Delete("table", "key")
+      expectMsg(DeleteAck("table", "key"))
+      ab ! Find("table", "key")
+      expectMsg(FindAck("table", "key", None))
+      ab ! Find("table", "key1")
+      expectMsg(FindAck("table", "key1", Some(Payload1)))
+      ab ! Count("table")
+      expectMsg(CountAck("table", 1))
+    }
+
+    "deletion a previously inserted key and then insert another key" in {
+      ab ! Upsert("table", "key", Payload)
+      expectMsg(UpsertAck("table", "key"))
+      ab ! Delete("table", "key")
+      expectMsg(DeleteAck("table", "key"))
+      ab ! Upsert("table", "key1", Payload1)
+      expectMsg(UpsertAck("table", "key1"))
+      ab ! Find("table", "key")
+      expectMsg(FindAck("table", "key", None))
+      ab ! Find("table", "key1")
+      expectMsg(FindAck("table", "key1", Some(Payload1)))
+      ab ! Count("table")
+      expectMsg(CountAck("table", 1))
+    }
   }
 
   private def createCollection(name: String) = {

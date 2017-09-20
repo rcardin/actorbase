@@ -72,7 +72,7 @@ class Actorbase extends Actor {
           val u = uuid()
           collection.finder ! Query(id, u)
           context.become(nonEmptyDatabase(tables, state.addQuery(u, ActorbaseRequest(collection.name, sender()))))
-        case None => sender() ! FindAck(coll, id, None)
+        case None => replyFindOnNotExistingCollection(coll, id)
       }
     case QueryAck(key, value, u) =>
       val (maybeReq, newState) = state.removeQuery(u)
