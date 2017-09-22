@@ -5,7 +5,7 @@ import akka.actor.ActorRef
 /**
   * The MIT License (MIT)
   *
-  * Copyright (c) 2015 Riccardo Cardin
+  * Copyright (c) 2015 - 2017 Riccardo Cardin
   *
   * Permission is hereby granted, free of charge, to any person obtaining a copy
   * of this software and associated documentation files (the "Software"), to deal
@@ -24,9 +24,7 @@ import akka.actor.ActorRef
   * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
   * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
   * SOFTWARE.
-  */
-
-/**
+  *
   * Traces the pending requests from and to a StoreFinder.
   *
   * @author Riccardo Cardin
@@ -36,7 +34,7 @@ import akka.actor.ActorRef
 case class StoreFinderState(upserts: Map[Long, ActorRef],
                             queries: Map[Long, QueryReq],
                             erasures: Map[Long, (Int, ActorRef)],
-                            count: Long) {
+                            counts: Map[Long, (Long, Long, ActorRef)]) {
   def addQuery(key: String, id: Long, sender: ActorRef): StoreFinderState = {
     copy(queries = queries + (id -> QueryReq(sender, List[Option[(Array[Byte], Long)]]())))
   }
@@ -50,24 +48,38 @@ case class StoreFinderState(upserts: Map[Long, ActorRef],
   }
 
   def addErasure(id: Long, sender: ActorRef, size: Long): StoreFinderState = {
-    copy(erasures = erasures + (id -> (0, sender)), count = size)
+    copy(erasures = erasures + (id -> (0, sender)))
   }
 
   def upsertAck(id: Long): StoreFinderState = {
-    copy(upserts = upserts - id, count = count + 1)
+    copy(upserts = upserts - id)
   }
 
   def upsertNAck(id: Long): StoreFinderState = {
     copy(upserts = upserts - id)
   }
+
+  def addCount(id: Long, sender: ActorRef): StoreFinderState = {
+    copy(counts = counts + (id -> (0, 0, sender)))
+  }
+
+  def removeCounts(id: Long): StoreFinderState = {
+    copy(counts = counts - id)
+  }
+
+  def countAck(id: Long, size: Long): StoreFinderState = {
+    val (req, oldSize, sender) = counts(id)
+    copy(counts = counts.updated(id, (req + 1, oldSize + size, sender)))
+  }
 }
+
 object StoreFinderState {
-  def apply(): StoreFinderState = new StoreFinderState(Map(), Map(), Map(), 0L)
+  def apply(): StoreFinderState = new StoreFinderState(Map(), Map(), Map(), Map())
 }
 /**
   * TODO
-  * @param sender
-  * @param responses
+  * @param sender Sender actor
+  * @param responses Number of responses
   */
 sealed case class QueryReq(sender: ActorRef,
                            responses: List[Option[(Array[Byte], Long)]])

@@ -8,8 +8,9 @@ import io.actorbase.actor.storefinder.StoreFinder.NumberOfPartitions
 import io.actorbase.actor.storefinder.StoreFinder.Request.{Count, Delete, Query, Upsert}
 import io.actorbase.actor.storefinder.StoreFinder.Response._
 import io.actorbase.actor.storekeeper.Storekeeper
+import io.actorbase.actor.storekeeper.Storekeeper.Request
 import io.actorbase.actor.storekeeper.Storekeeper.Request.{Get, Put, Remove}
-import io.actorbase.actor.storekeeper.Storekeeper.Response.{Item, PutAck, PutNAck, RemoveAck}
+import io.actorbase.actor.storekeeper.Storekeeper.Response._
 
 /**
   * The MIT License (MIT)
@@ -33,9 +34,7 @@ import io.actorbase.actor.storekeeper.Storekeeper.Response.{Item, PutAck, PutNAc
   * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
   * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
   * SOFTWARE.
-  */
-
-/**
+  *
   * Represents a named partitioned map.
   *
   * FIXME Refactor
@@ -109,7 +108,6 @@ class StoreFinder(val name: String) extends Actor {
       broadcastRouter.route(Get(key, u), self)
       // FIXME Improve syntax
       context.become(nonEmptyTable(state.addQuery(key, u, sender())))
-    case Count(u) => sender ! CountAck(state.count, u)
     case Delete(key, u) =>
       broadcastRouter.route(Remove(key, u), self)
       context.become(nonEmptyTable(state.addErasure(u, sender())))
@@ -130,12 +128,20 @@ class StoreFinder(val name: String) extends Actor {
       context.become(nonEmptyTable(state.copy(queries = item(res, state.queries))))
     case rm: RemoveAck =>
       val newPendingErasures = delete(rm, state.erasures)
-      if (state.erasures.size > newPendingErasures.size) {
-        // FIXME By now, we do not return to empty table: implement a procedure that
-        //       fixes any pending request on a table that became empty
-        context.become(nonEmptyTable(state.copy(erasures = newPendingErasures, count = state.count - 1)))
-      } else {
-        context.become(nonEmptyTable(state.copy(erasures = newPendingErasures)))
+      // FIXME By now, we do not return to empty table: implement a procedure that
+      //       fixes any pending request on a table that became empty
+      context.become(nonEmptyTable(state.copy(erasures = newPendingErasures)))
+    case Count(u) =>
+      broadcastRouter.route(Request.Count(u), self)
+      context.become(nonEmptyTable(state.addCount(u, sender())))
+    case Size(size, u) =>
+      val newState = state.countAck(u, size)
+      val (req, countSize, senderActor) = newState.counts(u)
+      if (req < NumberOfPartitions)
+        context.become(nonEmptyTable(newState))
+      else {
+        senderActor ! CountAck(countSize, u)
+        context.become(nonEmptyTable(newState.removeCounts(u)))
       }
   }
 

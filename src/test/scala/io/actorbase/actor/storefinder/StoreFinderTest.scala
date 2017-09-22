@@ -175,8 +175,7 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
       sf ! Count(Uuid)
       expectMsg(CountAck(0, Uuid))
     }
-/*
-    // FIXME
+
     "send an ack relative to the deletion of a key that is not present" in {
       sf ! Upsert("key", Payload, Uuid)
       expectMsg(UpsertAck("key", Uuid))
@@ -187,7 +186,7 @@ class StoreFinderTest extends TestKit(ActorSystem("testSystemStoreFinder"))
       sf ! Count(Uuid)
       expectMsg(CountAck(1, Uuid))
     }
-*/
+
     "send an ack relative to the deletion of a previously inserted key (more than one key present)" in {
       sf ! Upsert("key", Payload, Uuid)
       expectMsg(UpsertAck("key", Uuid))

@@ -9,7 +9,7 @@ import io.actorbase.actor.storekeeper.Storekeeper.Response._
 /**
   * The MIT License (MIT)
   *
-  * Copyright (c) 2015 Riccardo Cardin
+  * Copyright (c) 2015 - 2017 Riccardo Cardin
   *
   * Permission is hereby granted, free of charge, to any person obtaining a copy
   * of this software and associated documentation files (the "Software"), to deal
@@ -28,9 +28,7 @@ import io.actorbase.actor.storekeeper.Storekeeper.Response._
   * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
   * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
   * SOFTWARE.
-  */
-
-/**
+  *
   * Stores couples of {{String}} -> {{Array[Byte]}}.
   *
   * @author Riccardo Cardin
