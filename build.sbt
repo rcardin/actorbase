@@ -11,3 +11,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka"  %% "akka-testkit"  % "2.5.4"  % "test",
   "org.apache.commons" %  "commons-lang3" % "3.5"     % "test"
 )
+
+lazy val messages = project in file("actorbase-api-messages")
+lazy val actorbase = (project in file("."))
+  .aggregate(messages)
