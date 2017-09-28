@@ -2,8 +2,8 @@
 package io.actorbase.actor.main
 
 import akka.actor.{Actor, Props}
-import io.actorbase.actor.main.Actorbase.Request._
-import io.actorbase.actor.main.Actorbase.Response._
+import io.actorbase.actor.api.Api.Request._
+import io.actorbase.actor.api.Api.Response._
 import io.actorbase.actor.main.Actorbase.uuid
 import io.actorbase.actor.storefinder.StoreFinder
 import io.actorbase.actor.storefinder.StoreFinder.Request.Query
@@ -163,45 +163,5 @@ class Actorbase extends Actor {
 }
 
 object Actorbase {
-
   private def uuid(): Long = System.currentTimeMillis()
-
-  sealed trait Message
-
-  // Request messages
-  object Request {
-
-    case class CreateCollection(name: String) extends Message
-
-    case class Find(collection: String, id: String) extends Message
-
-    case class Upsert(collection: String, id: String, value: Array[Byte]) extends Message
-
-    case class Delete(collection: String, id: String) extends Message
-
-    case class Count(collection: String) extends Message
-  }
-  // Response messages
-  object Response {
-
-    case class CreateCollectionAck(name: String) extends Message
-
-    case class CreateCollectionNAck(name: String, error: String) extends Message
-
-    case class FindAck(collection: String, id: String, value: Option[Array[Byte]]) extends Message
-
-    case class FindNAck(collection: String, id: String, error: String) extends Message
-
-    case class UpsertAck(collection: String, id: String) extends Message
-
-    case class UpsertNAck(collection: String, id: String, error: String) extends Message
-
-    case class DeleteAck(collection: String, id: String) extends Message
-
-    case class DeleteNAck(collection: String, id: String, error: String) extends Message
-
-    case class CountAck(collection: String, count: Long)
-
-    case class CountNAck(collection: String, error: String) extends Message
-  }
 }

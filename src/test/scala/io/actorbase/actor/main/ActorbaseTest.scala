@@ -2,8 +2,8 @@ package io.actorbase.actor.main
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
-import io.actorbase.actor.main.Actorbase.Request._
-import io.actorbase.actor.main.Actorbase.Response._
+import io.actorbase.actor.api.Api.Request._
+import io.actorbase.actor.api.Api.Response._
 import org.apache.commons.lang3.SerializationUtils
 import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, MustMatchers, WordSpecLike}
 

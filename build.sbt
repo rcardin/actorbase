@@ -15,3 +15,4 @@ libraryDependencies ++= Seq(
 lazy val messages = project in file("actorbase-api-messages")
 lazy val actorbase = (project in file("."))
   .aggregate(messages)
+  .dependsOn(messages)

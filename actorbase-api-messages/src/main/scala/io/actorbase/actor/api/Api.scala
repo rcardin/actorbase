@@ -25,7 +25,7 @@ package io.actorbase.actor.api
   *
   * External API of Actobase system
   */
-object Messages {
+object Api {
   // Request messages
   object Request {
 
@@ -42,24 +42,24 @@ object Messages {
   // Response messages
   object Response {
 
-    case class CreateCollectionAck(name: String)
+    sealed trait CreationResponse
+    case class CreateCollectionAck(name: String) extends CreationResponse
+    case class CreateCollectionNAck(name: String, error: String) extends CreationResponse
 
-    case class CreateCollectionNAck(name: String, error: String)
+    sealed trait FindResponse
+    case class FindAck(collection: String, id: String, value: Option[Array[Byte]]) extends FindResponse
+    case class FindNAck(collection: String, id: String, error: String) extends FindResponse
 
-    case class FindAck(collection: String, id: String, value: Option[Array[Byte]])
+    sealed trait UpsertionResponse
+    case class UpsertAck(collection: String, id: String) extends UpsertionResponse
+    case class UpsertNAck(collection: String, id: String, error: String) extends UpsertionResponse
 
-    case class FindNAck(collection: String, id: String, error: String)
+    sealed trait DeletionResponse
+    case class DeleteAck(collection: String, id: String) extends DeletionResponse
+    case class DeleteNAck(collection: String, id: String, error: String) extends DeletionResponse
 
-    case class UpsertAck(collection: String, id: String)
-
-    case class UpsertNAck(collection: String, id: String, error: String)
-
-    case class DeleteAck(collection: String, id: String)
-
-    case class DeleteNAck(collection: String, id: String, error: String)
-
-    case class CountAck(collection: String, count: Long)
-
-    case class CountNAck(collection: String, error: String)
+    sealed trait CountResponse
+    case class CountAck(collection: String, count: Long) extends CountResponse
+    case class CountNAck(collection: String, error: String) extends CountResponse
   }
 }
