@@ -66,7 +66,12 @@ class StoreFinder(val name: String) extends Actor {
   override def receive: Receive = emptyTable()
 
   // FIXME Change this stupid name
-  def handleWithCameo: Receive = ???
+  def handleWithCameo: Receive = {
+    case Upsert(key, payload, u) =>
+      val originalSender = sender()
+      val handler = context.actorOf(Props(new UpsertResponseHandler(originalSender)))
+      upsertRouter.route(Put(key, payload, u), handler)
+  }
 
   def emptyTable(): Receive = {
     // External interface
@@ -229,7 +234,7 @@ abstract class Handler(originalSender: ActorRef) extends Actor with ActorLogging
   * @param originalSender Original sender of the upsert request
   */
 class UpsertResponseHandler(originalSender: ActorRef) extends Handler(originalSender) {
-  override def receive = LoggingReceive {
+  override def receive: Receive = LoggingReceive {
     case PutAck(key, u) =>
       log.debug(s"Received put ack for key $key and with uuid $u")
       sendResponseAndShutdown(UpsertAck(key, u))
@@ -237,6 +242,14 @@ class UpsertResponseHandler(originalSender: ActorRef) extends Handler(originalSe
       log.debug(s"Received put nack for key $key and with uuid $u")
       sendResponseAndShutdown(UpsertNAck(key, msg, u))
   }
+}
 
+class QueryResponseHandler(originalSender: ActorRef, partitions: Int) extends Handler(originalSender) {
 
+  // FIXME: avoid mutable state
+  var responses: List[Option[Array[Byte]]] = Nil
+
+  override def receive: Receive = LoggingReceive {
+    case Item(key, maybeValue, u) => ???
+  }
 }
