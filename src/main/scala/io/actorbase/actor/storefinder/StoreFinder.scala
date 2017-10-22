@@ -2,11 +2,12 @@ package io.actorbase.actor.storefinder
 
 import java.util.UUID
 
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.event.LoggingReceive
 import akka.routing.{ActorRefRoutee, BroadcastRoutingLogic, Router, SmallestMailboxRoutingLogic}
-import io.actorbase.actor.storefinder.StoreFinder.NumberOfPartitions
 import io.actorbase.actor.storefinder.StoreFinder.Request.{Count, Delete, Query, Upsert}
 import io.actorbase.actor.storefinder.StoreFinder.Response._
+import io.actorbase.actor.storefinder.StoreFinder.{Message, NumberOfPartitions}
 import io.actorbase.actor.storekeeper.Storekeeper
 import io.actorbase.actor.storekeeper.Storekeeper.Request
 import io.actorbase.actor.storekeeper.Storekeeper.Request.{Get, Put, Remove}
@@ -63,6 +64,9 @@ class StoreFinder(val name: String) extends Actor {
   }
 
   override def receive: Receive = emptyTable()
+
+  // FIXME Change this stupid name
+  def handleWithCameo: Receive = ???
 
   def emptyTable(): Receive = {
     // External interface
@@ -210,4 +214,29 @@ object StoreFinder {
 
     case class DeleteAck(key: String, uuid: Long)
   }
+}
+
+abstract class Handler(originalSender: ActorRef) extends Actor with ActorLogging {
+  def sendResponseAndShutdown(response: Message): Unit = {
+    originalSender ! response
+    log.debug(s"Stopping context capturing actor $self")
+    context.stop(self)
+  }
+}
+
+/**
+  * Handles responses to {@code Put} messages from {@link Storekeeper} actor
+  * @param originalSender Original sender of the upsert request
+  */
+class UpsertResponseHandler(originalSender: ActorRef) extends Handler(originalSender) {
+  override def receive = LoggingReceive {
+    case PutAck(key, u) =>
+      log.debug(s"Received put ack for key $key and with uuid $u")
+      sendResponseAndShutdown(UpsertAck(key, u))
+    case PutNAck(key, msg, u) =>
+      log.debug(s"Received put nack for key $key and with uuid $u")
+      sendResponseAndShutdown(UpsertNAck(key, msg, u))
+  }
+
+
 }
