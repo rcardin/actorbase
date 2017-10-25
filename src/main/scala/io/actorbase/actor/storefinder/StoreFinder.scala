@@ -49,7 +49,7 @@ class StoreFinder(val name: String) extends Actor {
   // Partitions of the table
   private val partitions =
     Vector.fill(NumberOfPartitions)
-      {context.actorOf(Props[Storekeeper], name = s"$name${UUID.randomUUID()}")}
+    {context.actorOf(Props[Storekeeper], name = s"$name${UUID.randomUUID()}")}
 
   // Routers
   // Insertion routing strategy
@@ -75,6 +75,10 @@ class StoreFinder(val name: String) extends Actor {
       val originalSender = sender()
       val handler = context.actorOf(Props(new QueryResponseHandler(originalSender, NumberOfPartitions)))
       upsertRouter.route(Get(key, u), handler)
+    case Delete(key, u) =>
+      val originalSender = sender()
+      val handler = context.actorOf(Props(new DeleteResponseHandler(originalSender, NumberOfPartitions)))
+      upsertRouter.route(Remove(key, u), handler)
   }
 
   def emptyTable(): Receive = {
@@ -221,7 +225,7 @@ object StoreFinder {
 
     case class CountAck(s: Long, uuid: Long) extends Message
 
-    case class DeleteAck(key: String, uuid: Long)
+    case class DeleteAck(key: String, uuid: Long) extends Message
   }
 }
 
@@ -263,6 +267,20 @@ class QueryResponseHandler(originalSender: ActorRef, partitions: Int) extends Ha
           .headOption
           .map(_._1)
         sendResponseAndShutdown(QueryAck(key, item, u))
+      }
+  }
+}
+
+class DeleteResponseHandler(originalSender: ActorRef, partitions: Int) extends Handler(originalSender) {
+
+  // FIXME: avoid mutable state
+  var numberOfResponses = 0
+
+  override def receive: Receive = {
+    case RemoveAck(key, id) =>
+      numberOfResponses += 1
+      if (numberOfResponses == NumberOfPartitions) {
+        sendResponseAndShutdown(DeleteAck(key, id))
       }
   }
 }
