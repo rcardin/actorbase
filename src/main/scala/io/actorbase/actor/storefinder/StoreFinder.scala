@@ -251,10 +251,10 @@ class UpsertResponseHandler(originalSender: ActorRef) extends Handler(originalSe
 class QueryResponseHandler(originalSender: ActorRef, partitions: Int) extends Handler(originalSender) {
 
   // FIXME: avoid mutable state
-  var responses: List[Option[(Array[Byte], Long)]]
+  var responses: List[Option[(Array[Byte], Long)]] = Nil
 
   override def receive: Receive = LoggingReceive {
-    case Item(key, opt, u) => {
+    case Item(key, opt, u) =>
       responses = opt :: responses
       if (responses.length == partitions) {
         val item = responses.collect {
@@ -264,6 +264,5 @@ class QueryResponseHandler(originalSender: ActorRef, partitions: Int) extends Ha
           .map(_._1)
         sendResponseAndShutdown(QueryAck(key, item, u))
       }
-    }
   }
 }
