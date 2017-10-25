@@ -71,6 +71,10 @@ class StoreFinder(val name: String) extends Actor {
       val originalSender = sender()
       val handler = context.actorOf(Props(new UpsertResponseHandler(originalSender)))
       upsertRouter.route(Put(key, payload, u), handler)
+    case Query(key, u) =>
+      val originalSender = sender()
+      val handler = context.actorOf(Props(new QueryResponseHandler(originalSender, NumberOfPartitions)))
+      upsertRouter.route(Get(key, u), handler)
   }
 
   def emptyTable(): Receive = {
@@ -247,9 +251,19 @@ class UpsertResponseHandler(originalSender: ActorRef) extends Handler(originalSe
 class QueryResponseHandler(originalSender: ActorRef, partitions: Int) extends Handler(originalSender) {
 
   // FIXME: avoid mutable state
-  var responses: List[Option[Array[Byte]]] = Nil
+  var responses: List[Option[(Array[Byte], Long)]]
 
   override def receive: Receive = LoggingReceive {
-    case Item(key, maybeValue, u) => ???
+    case Item(key, opt, u) => {
+      responses = opt :: responses
+      if (responses.length == partitions) {
+        val item = responses.collect {
+          case Some(tuple) => tuple
+        }.sortBy(_._2)
+          .headOption
+          .map(_._1)
+        sendResponseAndShutdown(QueryAck(key, item, u))
+      }
+    }
   }
 }
