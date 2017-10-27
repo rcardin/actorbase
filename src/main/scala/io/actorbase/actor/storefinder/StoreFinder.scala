@@ -72,11 +72,11 @@ class StoreFinder(val name: String) extends Actor {
     case Query(key, u) =>
       val originalSender = sender()
       val handler = context.actorOf(Props(new QueryResponseHandler(originalSender, NumberOfPartitions)))
-      upsertRouter.route(Get(key, u), handler)
+      broadcastRouter.route(Get(key, u), handler)
     case Delete(key, u) =>
       val originalSender = sender()
       val handler = context.actorOf(Props(new DeleteResponseHandler(originalSender, NumberOfPartitions)))
-      upsertRouter.route(Remove(key, u), handler)
+      broadcastRouter.route(Remove(key, u), handler)
     case Count(u) =>
       val originalSender = sender()
       val handler = context.actorOf(Props(new CountResponseHandler(originalSender, NumberOfPartitions)))
@@ -129,16 +129,14 @@ abstract class Handler(originalSender: ActorRef) extends Actor with ActorLogging
 }
 
 /**
-  * Handles responses to {@code Put} messages from {@link Storekeeper} actor
+  * Handles responses to `Put` messages from `StoreKeeper` actor
   * @param originalSender Original sender of the upsert request
   */
 class UpsertResponseHandler(originalSender: ActorRef) extends Handler(originalSender) {
   override def receive: Receive = LoggingReceive {
     case PutAck(key, u) =>
-      log.debug(s"Received put ack for key $key and with uuid $u")
       sendResponseAndShutdown(UpsertAck(key, u))
     case PutNAck(key, msg, u) =>
-      log.debug(s"Received put nack for key $key and with uuid $u")
       sendResponseAndShutdown(UpsertNAck(key, msg, u))
   }
 }
@@ -167,7 +165,7 @@ class DeleteResponseHandler(originalSender: ActorRef, partitions: Int) extends H
   // FIXME: avoid mutable state
   var numberOfResponses = 0
 
-  override def receive: Receive = {
+  override def receive: Receive = LoggingReceive {
     case RemoveAck(key, id) =>
       numberOfResponses += 1
       if (numberOfResponses == NumberOfPartitions) {
@@ -181,7 +179,7 @@ class CountResponseHandler(originalSender: ActorRef, partitions: Int) extends Ha
   var count = 0L
   var numberOfResponses = 0
 
-  override def receive: Receive = {
+  override def receive: Receive = LoggingReceive {
     case Size(size, u) =>
       count += size
       numberOfResponses += 1
