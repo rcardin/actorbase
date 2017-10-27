@@ -2,11 +2,12 @@ package io.actorbase.actor.storefinder
 
 import java.util.UUID
 
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.event.LoggingReceive
 import akka.routing.{ActorRefRoutee, BroadcastRoutingLogic, Router, SmallestMailboxRoutingLogic}
-import io.actorbase.actor.storefinder.StoreFinder.NumberOfPartitions
 import io.actorbase.actor.storefinder.StoreFinder.Request.{Count, Delete, Query, Upsert}
 import io.actorbase.actor.storefinder.StoreFinder.Response._
+import io.actorbase.actor.storefinder.StoreFinder.{Message, NumberOfPartitions}
 import io.actorbase.actor.storekeeper.Storekeeper
 import io.actorbase.actor.storekeeper.Storekeeper.Request
 import io.actorbase.actor.storekeeper.Storekeeper.Request.{Get, Put, Remove}
@@ -47,8 +48,9 @@ class StoreFinder(val name: String) extends Actor {
 
   // Partitions of the table
   private val partitions =
-    Vector.fill(NumberOfPartitions)
-      {context.actorOf(Props[Storekeeper], name = s"$name${UUID.randomUUID()}")}
+    Vector.fill(NumberOfPartitions) {
+      context.actorOf(Props[Storekeeper], name = s"$name${UUID.randomUUID()}")
+    }
 
   // Routers
   // Insertion routing strategy
@@ -62,117 +64,23 @@ class StoreFinder(val name: String) extends Actor {
     Router(BroadcastRoutingLogic(), routees)
   }
 
-  override def receive: Receive = emptyTable()
-
-  def emptyTable(): Receive = {
-    // External interface
+  override def receive: Receive = {
     case Upsert(key, payload, u) =>
-      upsertRouter.route(Put(key, payload, u), self)
-      val initialState = StoreFinderState()
-      context.become(almostEmptyTable(initialState.addUpsert(u, sender())))
-    case Query(key, u) => sender ! QueryAck(key, None, u)
-    case Count(u) => sender ! CountAck(0, u)
-    case Delete(key, u) => sender ! DeleteAck(key, u)
-  }
-
-  def almostEmptyTable(state: StoreFinderState): Receive = {
-    case Upsert(key, payload, u) =>
-      upsertRouter.route(Put(key, payload, u), self)
-      context.become(almostEmptyTable(state.addUpsert(u, sender())))
-    case Query(key, u) => sender ! QueryAck(key, None, u)
-    case Count(u) => sender ! CountAck(0, u)
-    case Delete(key, u) => sender ! DeleteAck(key, u)
-    case PutAck(key, u) =>
-      state.upserts.get(u).collect {
-        case senderActor =>
-          senderActor ! UpsertAck(key, u)
-          context.become(nonEmptyTable(state.upsertAck(u)))
-      }
-    case PutNAck(key, msg, u) =>
-      state.upserts.get(u).collect {
-        case senderActor =>
-          senderActor ! UpsertNAck(key, msg, u)
-          if (state.upserts.size == 1)
-            context.become(emptyTable())
-          else
-            context.become(almostEmptyTable(state.upsertNAck(u)))
-      }
-  }
-
-  def nonEmptyTable(state: StoreFinderState): Receive = {
-    case Upsert(key, payload, u) =>
-      // FIXME There is a problem with upsert: We don't know where is the previous value
-      upsertRouter.route(Put(key, payload, u), self)
-      context.become(nonEmptyTable(state.addUpsert(u, sender())))
+      val originalSender = sender()
+      val handler = context.actorOf(Props(new UpsertResponseHandler(originalSender)))
+      upsertRouter.route(Put(key, payload, u), handler)
     case Query(key, u) =>
-      broadcastRouter.route(Get(key, u), self)
-      // FIXME Improve syntax
-      context.become(nonEmptyTable(state.addQuery(key, u, sender())))
+      val originalSender = sender()
+      val handler = context.actorOf(Props(new QueryResponseHandler(originalSender, NumberOfPartitions)))
+      broadcastRouter.route(Get(key, u), handler)
     case Delete(key, u) =>
-      broadcastRouter.route(Remove(key, u), self)
-      context.become(nonEmptyTable(state.addErasure(u, sender())))
-    // FIXME This code is repeated
-    case PutAck(key, u) =>
-      state.upserts.get(u).collect {
-        case senderActor =>
-          senderActor ! UpsertAck(key, u)
-          context.become(nonEmptyTable(state.upsertAck(u)))
-      }
-    case PutNAck(key, msg, u) =>
-      state.upserts.get(u).collect {
-        case senderActor =>
-          senderActor ! UpsertNAck(key, msg, u)
-          context.become(nonEmptyTable(state.upsertNAck(u)))
-      }
-    case res: Item =>
-      context.become(nonEmptyTable(state.copy(queries = item(res, state.queries))))
-    case rm: RemoveAck =>
-      val newPendingErasures = delete(rm, state.erasures)
-      // FIXME By now, we do not return to empty table: implement a procedure that
-      //       fixes any pending request on a table that became empty
-      context.become(nonEmptyTable(state.copy(erasures = newPendingErasures)))
+      val originalSender = sender()
+      val handler = context.actorOf(Props(new DeleteResponseHandler(originalSender, NumberOfPartitions)))
+      broadcastRouter.route(Remove(key, u), handler)
     case Count(u) =>
-      broadcastRouter.route(Request.Count(u), self)
-      context.become(nonEmptyTable(state.addCount(u, sender())))
-    case Size(size, u) =>
-      val newState = state.countAck(u, size)
-      val (req, countSize, senderActor) = newState.counts(u)
-      if (req < NumberOfPartitions)
-        context.become(nonEmptyTable(newState))
-      else {
-        senderActor ! CountAck(countSize, u)
-        context.become(nonEmptyTable(newState.removeCounts(u)))
-      }
-  }
-
-  private def item(response: Item,
-                   queries: Map[Long, QueryReq]): Map[Long, QueryReq] = {
-    val Item(key, opt, id) = response
-    val QueryReq(actor, responses) = queries(id)
-    val newResponses = opt :: responses
-    if (newResponses.length == NumberOfPartitions) {
-      val item = newResponses.collect {
-        case Some(tuple) => tuple
-      }.sortBy(_._2)
-        .headOption
-        .map(_._1)
-      actor ! QueryAck(key, item, id)
-      queries - id
-    } else {
-      queries + (id -> QueryReq(actor, newResponses))
-    }
-  }
-
-  private def delete(remove: RemoveAck, erasures: Map[/*uuid*/ Long, (Int, ActorRef)]): Map[Long, (Int, ActorRef)] = {
-    val RemoveAck(key, id) = remove
-    val (responses, actor) = erasures(id)
-    val newResponses = responses + 1
-    if (newResponses == NumberOfPartitions) {
-      actor ! DeleteAck(key, id)
-      erasures - id
-    } else {
-      erasures + (id -> (newResponses, actor))
-    }
+      val originalSender = sender()
+      val handler = context.actorOf(Props(new CountResponseHandler(originalSender, NumberOfPartitions)))
+      broadcastRouter.route(Request.Count(u), handler)
   }
 }
 
@@ -208,6 +116,75 @@ object StoreFinder {
 
     case class CountAck(s: Long, uuid: Long) extends Message
 
-    case class DeleteAck(key: String, uuid: Long)
+    case class DeleteAck(key: String, uuid: Long) extends Message
+  }
+}
+
+abstract class Handler(originalSender: ActorRef) extends Actor with ActorLogging {
+  def sendResponseAndShutdown(response: Message): Unit = {
+    originalSender ! response
+    log.debug(s"Stopping context capturing actor $self")
+    context.stop(self)
+  }
+}
+
+/**
+  * Handles responses to `Put` messages from `StoreKeeper` actor
+  * @param originalSender Original sender of the upsert request
+  */
+class UpsertResponseHandler(originalSender: ActorRef) extends Handler(originalSender) {
+  override def receive: Receive = LoggingReceive {
+    case PutAck(key, u) =>
+      sendResponseAndShutdown(UpsertAck(key, u))
+    case PutNAck(key, msg, u) =>
+      sendResponseAndShutdown(UpsertNAck(key, msg, u))
+  }
+}
+
+class QueryResponseHandler(originalSender: ActorRef, partitions: Int) extends Handler(originalSender) {
+
+  // FIXME: avoid mutable state
+  var responses: List[Option[(Array[Byte], Long)]] = Nil
+
+  override def receive: Receive = LoggingReceive {
+    case Item(key, opt, u) =>
+      responses = opt :: responses
+      if (responses.length == partitions) {
+        val item = responses.collect {
+          case Some(tuple) => tuple
+        }.sortBy(_._2)
+          .headOption
+          .map(_._1)
+        sendResponseAndShutdown(QueryAck(key, item, u))
+      }
+  }
+}
+
+class DeleteResponseHandler(originalSender: ActorRef, partitions: Int) extends Handler(originalSender) {
+
+  // FIXME: avoid mutable state
+  var numberOfResponses = 0
+
+  override def receive: Receive = LoggingReceive {
+    case RemoveAck(key, id) =>
+      numberOfResponses += 1
+      if (numberOfResponses == NumberOfPartitions) {
+        sendResponseAndShutdown(DeleteAck(key, id))
+      }
+  }
+}
+
+class CountResponseHandler(originalSender: ActorRef, partitions: Int) extends Handler(originalSender) {
+
+  var count = 0L
+  var numberOfResponses = 0
+
+  override def receive: Receive = LoggingReceive {
+    case Size(size, u) =>
+      count += size
+      numberOfResponses += 1
+      if (numberOfResponses == NumberOfPartitions) {
+        sendResponseAndShutdown(CountAck(count, u))
+      }
   }
 }

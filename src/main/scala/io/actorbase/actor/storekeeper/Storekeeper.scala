@@ -54,6 +54,7 @@ class Storekeeper extends Actor {
 
   private def put(store: Map[String, (Array[Byte], Long)], key: String, value: Array[Byte], uuid: Long) = {
     try {
+      // FIXME There is some strange control on key
       if (key != null) {
         val newStore = store + (Objects.requireNonNull(key) -> (value, uuid))
         sender ! PutAck(key, uuid)
