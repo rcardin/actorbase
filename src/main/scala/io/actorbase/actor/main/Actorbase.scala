@@ -1,7 +1,8 @@
 
 package io.actorbase.actor.main
 
-import akka.actor.{Actor, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.event.LoggingReceive
 import io.actorbase.actor.api.Api.Request._
 import io.actorbase.actor.api.Api.Response._
 import io.actorbase.actor.main.Actorbase.uuid
@@ -43,6 +44,12 @@ class Actorbase extends Actor {
 
   override def receive: Receive = emptyDatabase
 
+  def cameoReceive(tables: Map[String, Collection]): Receive = {
+    manageCreations(tables)
+      .orElse(manageUpserts(tables))
+
+  }
+
   def emptyDatabase: Receive = {
     case CreateCollection(name) => createCollection(name)
     case Find(collection, id) => replyFindOnNotExistingCollection(collection, id)
@@ -51,56 +58,52 @@ class Actorbase extends Actor {
     case Count(collection) => replyCountOnNotExistingCollection(collection)
   }
 
+  def nonEmptyDatabase(tables: Map[String, Collection], state: ActorbaseState): Receive = ???
+
+  /*
   def nonEmptyDatabase(tables: Map[String, Collection], state: ActorbaseState): Receive = {
-    manageCreations(tables, state)
+    manageCreations(tables)
       .orElse(manageQueries(tables, state))
       .orElse(manageUpserts(tables, state))
       .orElse(manageDeletions(tables, state))
       .orElse(manageCounts(tables, state))
   }
+  */
 
-  private def manageCreations(tables: Map[String, Collection], state: ActorbaseState): Receive = {
+  private def manageCreations(tables: Map[String, Collection]): Receive = {
     case CreateCollection(name) =>
       if (!tables.isDefinedAt(name)) createCollection(name)
       else sender() ! CreateCollectionNAck(name, s"Collection $name already exists")
   }
 
+  private def manageUpserts(tables: Map[String, Collection]): Receive = {
+    case Upsert(coll, id, value) =>
+      tables.get(coll) match {
+        case Some(Collection(name, finder)) =>
+          val u = uuid()
+          val originalSender = sender()
+          val handler = context.actorOf(Props(new UpsertResponseHandler(name, originalSender)))
+          finder.tell(Request.Upsert(id, value, u), handler)
+        case None => replyInsertOnNotExistingCollection(coll, id)
+      }
+  }
+
   private def manageQueries(tables: Map[String, Collection], state: ActorbaseState): Receive = {
     case Find(coll, id) =>
-      tables.get(coll) match {
+    tables.get(coll) match {
         case Some(collection) =>
-          val u = uuid()
-          collection.finder ! Query(id, u)
-          context.become(nonEmptyDatabase(tables, state.addQuery(u, ActorbaseRequest(collection.name, sender()))))
+      val u = uuid()
+      collection.finder ! Query(id, u)
+      context.become(nonEmptyDatabase(tables, state.addQuery(u, ActorbaseRequest(collection.name, sender()))))
         case None => replyFindOnNotExistingCollection(coll, id)
       }
     case QueryAck(key, value, u) =>
-      val (maybeReq, newState) = state.removeQuery(u)
-      maybeReq foreach(request =>
-        request.sender ! FindAck(request.collection, key, value))
-      context.become(nonEmptyDatabase(tables, newState))
+    val (maybeReq, newState) = state.removeQuery(u)
+    maybeReq foreach(request =>
+    request.sender ! FindAck(request.collection, key, value))
+    context.become(nonEmptyDatabase(tables, newState))
   }
 
-  private def manageUpserts(tables: Map[String, Collection], state: ActorbaseState): Receive = {
-    case Upsert(coll, id, value) =>
-      tables.get(coll) match {
-        case Some(collection) =>
-          val u = uuid()
-          collection.finder ! Request.Upsert(id, value, u)
-          context.become(nonEmptyDatabase(tables, state.addUpsert(u, ActorbaseRequest(collection.name, sender()))))
-        case None => replyInsertOnNotExistingCollection(coll, id)
-      }
-    case Response.UpsertNAck(key, msg, u) =>
-      val (maybeReq, newState) = state.removeUpsert(u)
-      maybeReq foreach(request =>
-        request.sender ! UpsertNAck(request.collection, key, msg))
-      context.become(nonEmptyDatabase(tables, newState))
-    case Response.UpsertAck(key, u) =>
-      val (maybeReq, newState) = state.removeUpsert(u)
-      maybeReq foreach(request =>
-        request.sender ! UpsertAck(request.collection, key))
-      context.become(nonEmptyDatabase(tables, newState))
-  }
 
   private def manageDeletions(tables: Map[String, Collection], state: ActorbaseState): Receive = {
     case Delete(coll, id) =>
@@ -164,4 +167,26 @@ class Actorbase extends Actor {
 
 object Actorbase {
   private def uuid(): Long = System.currentTimeMillis()
+}
+
+// TODO Is it possible to make this a trait to share among cameo actors?
+abstract class Handler(originalSender: ActorRef) extends Actor with ActorLogging {
+  def sendResponseAndShutdown(response: Any): Unit = {
+    originalSender ! response
+    log.debug(s"Stopping context capturing actor $self")
+    context.stop(self)
+  }
+}
+
+/**
+  * Handles responses to `Upsert` messages from `Actorbase` actor
+  * @param originalSender Original sender of the upsert request
+  */
+class UpsertResponseHandler(collection: String, originalSender: ActorRef) extends Handler(originalSender) {
+  override def receive: Receive = LoggingReceive {
+    case Response.UpsertNAck(key, msg, u) =>
+      sendResponseAndShutdown(UpsertNAck(collection, key, msg))
+    case Response.UpsertAck(key, u) =>
+      sendResponseAndShutdown(UpsertAck(collection, key))
+  }
 }
