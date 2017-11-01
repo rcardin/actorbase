@@ -42,7 +42,7 @@ import io.actorbase.actor.storefinder.StoreFinder.{Request, Response}
   */
 class Actorbase extends Actor {
 
-  var tables: Map[String, Collection] = Map()
+  var tables: scala.collection.mutable.Map[String, Collection] = scala.collection.mutable.Map()
 
   override def receive: Receive = {
     manageCreations(tables)
@@ -52,13 +52,13 @@ class Actorbase extends Actor {
       .orElse(manageCounts(tables))
   }
 
-  private def manageCreations(tables: Map[String, Collection]): Receive = {
+  private def manageCreations(tables: scala.collection.mutable.Map[String, Collection]): Receive = {
     case CreateCollection(name) =>
       if (!tables.isDefinedAt(name)) createCollection(name)
       else sender() ! CreateCollectionNAck(name, s"Collection $name already exists")
   }
 
-  private def manageUpserts(tables: Map[String, Collection]): Receive = {
+  private def manageUpserts(tables: scala.collection.mutable.Map[String, Collection]): Receive = {
     case Upsert(coll, id, value) =>
       tables.get(coll) match {
         case Some(Collection(name, finder)) =>
@@ -70,7 +70,7 @@ class Actorbase extends Actor {
       }
   }
 
-  private def manageQueries(tables: Map[String, Collection]): Receive = {
+  private def manageQueries(tables: scala.collection.mutable.Map[String, Collection]): Receive = {
     case Find(coll, id) =>
       tables.get(coll) match {
         case Some(Collection(name, finder)) =>
@@ -82,7 +82,7 @@ class Actorbase extends Actor {
       }
   }
 
-  private def manageDeletions(tables: Map[String, Collection]): Receive = {
+  private def manageDeletions(tables: scala.collection.mutable.Map[String, Collection]): Receive = {
     case Delete(coll, id) =>
       tables.get(coll) match {
         case Some(Collection(name, finder)) =>
@@ -94,7 +94,7 @@ class Actorbase extends Actor {
       }
   }
 
-  def manageCounts(tables: Map[String, Collection]): Receive = {
+  def manageCounts(tables: scala.collection.mutable.Map[String, Collection]): Receive = {
     case Count(coll) =>
       tables.get(coll) match {
         case Some(Collection(name, finder)) =>
@@ -126,7 +126,7 @@ class Actorbase extends Actor {
     try {
       val table = context.actorOf(Props(new StoreFinder(name)))
       sender() ! CreateCollectionAck(name)
-      tables = Map(name -> Collection(name, table))
+      tables.+=((name, Collection(name, table)))
     } catch {
       case ex: Exception =>
         sender() ! CreateCollectionNAck(name, ex.getMessage)
