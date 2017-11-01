@@ -42,33 +42,15 @@ import io.actorbase.actor.storefinder.StoreFinder.{Request, Response}
   */
 class Actorbase extends Actor {
 
-  override def receive: Receive = emptyDatabase
+  var tables: Map[String, Collection] = Map()
 
-  def cameoReceive(tables: Map[String, Collection]): Receive = {
+  override def receive: Receive = {
     manageCreations(tables)
+      .orElse(manageQueries(tables))
       .orElse(manageUpserts(tables))
-
+      .orElse(manageDeletions(tables))
+      .orElse(manageCounts(tables))
   }
-
-  def emptyDatabase: Receive = {
-    case CreateCollection(name) => createCollection(name)
-    case Find(collection, id) => replyFindOnNotExistingCollection(collection, id)
-    case Upsert(collection, id, _) => replyInsertOnNotExistingCollection(collection, id)
-    case Delete(collection, id) => replyDeleteOnNotExistingCollection(collection, id)
-    case Count(collection) => replyCountOnNotExistingCollection(collection)
-  }
-
-  def nonEmptyDatabase(tables: Map[String, Collection], state: ActorbaseState): Receive = ???
-
-  /*
-  def nonEmptyDatabase(tables: Map[String, Collection], state: ActorbaseState): Receive = {
-    manageCreations(tables)
-      .orElse(manageQueries(tables, state))
-      .orElse(manageUpserts(tables, state))
-      .orElse(manageDeletions(tables, state))
-      .orElse(manageCounts(tables, state))
-  }
-  */
 
   private def manageCreations(tables: Map[String, Collection]): Receive = {
     case CreateCollection(name) =>
@@ -88,53 +70,40 @@ class Actorbase extends Actor {
       }
   }
 
-  private def manageQueries(tables: Map[String, Collection], state: ActorbaseState): Receive = {
+  private def manageQueries(tables: Map[String, Collection]): Receive = {
     case Find(coll, id) =>
-    tables.get(coll) match {
-        case Some(collection) =>
-      val u = uuid()
-      collection.finder ! Query(id, u)
-      context.become(nonEmptyDatabase(tables, state.addQuery(u, ActorbaseRequest(collection.name, sender()))))
+      tables.get(coll) match {
+        case Some(Collection(name, finder)) =>
+          val u = uuid()
+          val originalSender = sender()
+          val handler = context.actorOf(Props(new QueryResponseHandler(name, originalSender)))
+          finder.tell(Query(id, u), handler)
         case None => replyFindOnNotExistingCollection(coll, id)
       }
-    case QueryAck(key, value, u) =>
-    val (maybeReq, newState) = state.removeQuery(u)
-    maybeReq foreach(request =>
-    request.sender ! FindAck(request.collection, key, value))
-    context.become(nonEmptyDatabase(tables, newState))
   }
 
-
-  private def manageDeletions(tables: Map[String, Collection], state: ActorbaseState): Receive = {
+  private def manageDeletions(tables: Map[String, Collection]): Receive = {
     case Delete(coll, id) =>
       tables.get(coll) match {
-        case Some(collection) =>
+        case Some(Collection(name, finder)) =>
           val u = uuid()
-          collection.finder ! Request.Delete(id, u)
-          context.become(nonEmptyDatabase(tables, state.addDeletion(u, ActorbaseRequest(collection.name, sender()))))
+          val originalSender = sender()
+          val handler = context.actorOf(Props(new DeleteResponseHandler(name, originalSender)))
+          finder.tell(Request.Delete(id, u), handler)
         case None => replyDeleteOnNotExistingCollection(coll, id)
       }
-    case Response.DeleteAck(key, u) =>
-      val (maybeReq, newState) = state.removeDeletion(u)
-      maybeReq foreach(request =>
-        request.sender! DeleteAck(request.collection, key))
-      context.become(nonEmptyDatabase(tables, newState))
   }
 
-  def manageCounts(tables: Map[String, Collection], state: ActorbaseState): Receive = {
+  def manageCounts(tables: Map[String, Collection]): Receive = {
     case Count(coll) =>
       tables.get(coll) match {
-        case Some(collection) =>
+        case Some(Collection(name, finder)) =>
           val u = uuid()
-          collection.finder ! Request.Count(u)
-          context.become(nonEmptyDatabase(tables, state.addCount(u, ActorbaseRequest(collection.name, sender()))))
+          val originalSender = sender()
+          val handler = context.actorOf(Props(new CountResponseHandler(name, originalSender)))
+          finder.tell(Request.Count(u), handler)
         case None => replyCountOnNotExistingCollection(coll)
       }
-    case Response.CountAck(count, u) =>
-      val (maybeReq, newState) = state.removeCount(u)
-      maybeReq foreach(request =>
-        request.sender ! CountAck(request.collection, count))
-      context.become(nonEmptyDatabase(tables, newState))
   }
 
   private def replyFindOnNotExistingCollection(collection: String, id: String): Unit = {
@@ -157,7 +126,7 @@ class Actorbase extends Actor {
     try {
       val table = context.actorOf(Props(new StoreFinder(name)))
       sender() ! CreateCollectionAck(name)
-      context.become(nonEmptyDatabase(Map(name -> Collection(name, table)), ActorbaseState()))
+      tables = Map(name -> Collection(name, table))
     } catch {
       case ex: Exception =>
         sender() ! CreateCollectionNAck(name, ex.getMessage)
@@ -188,5 +157,26 @@ class UpsertResponseHandler(collection: String, originalSender: ActorRef) extend
       sendResponseAndShutdown(UpsertNAck(collection, key, msg))
     case Response.UpsertAck(key, u) =>
       sendResponseAndShutdown(UpsertAck(collection, key))
+  }
+}
+
+class QueryResponseHandler(collection: String, originalSender: ActorRef) extends Handler(originalSender) {
+  override def receive: Receive = LoggingReceive {
+    case QueryAck(key, value, u) =>
+      sendResponseAndShutdown(FindAck(collection, key, value))
+  }
+}
+
+class DeleteResponseHandler(collection: String, originalSender: ActorRef) extends Handler(originalSender) {
+  override def receive: Receive = LoggingReceive {
+    case Response.DeleteAck(key, u) =>
+      sendResponseAndShutdown(DeleteAck(collection, key))
+  }
+}
+
+class CountResponseHandler(collection: String, originalSender: ActorRef) extends Handler(originalSender) {
+  override def receive: Receive = LoggingReceive {
+    case Response.CountAck(count, u) =>
+      sendResponseAndShutdown(CountAck(collection, count))
   }
 }
