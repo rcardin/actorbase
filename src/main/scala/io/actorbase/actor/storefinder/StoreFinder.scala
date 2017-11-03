@@ -38,8 +38,6 @@ import io.actorbase.actor.storekeeper.Storekeeper.Response._
   *
   * Represents a named partitioned map.
   *
-  * FIXME Refactor
-  *
   * @author Riccardo Cardin
   * @version 0.1
   * @since 0.1
