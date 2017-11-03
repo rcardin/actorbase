@@ -58,6 +58,17 @@ class Actorbase extends Actor {
       else sender() ! CreateCollectionNAck(name, s"Collection $name already exists")
   }
 
+  private def createCollection(name: String): Unit = {
+    try {
+      val table = context.actorOf(Props(new StoreFinder(name)))
+      sender() ! CreateCollectionAck(name)
+      tables +=((name, Collection(name, table)))
+    } catch {
+      case ex: Exception =>
+        sender() ! CreateCollectionNAck(name, ex.getMessage)
+    }
+  }
+
   private def manageUpserts(tables: scala.collection.mutable.Map[String, Collection]): Receive = {
     case Upsert(coll, id, value) =>
       tables.get(coll) match {
@@ -66,7 +77,7 @@ class Actorbase extends Actor {
           val originalSender = sender()
           val handler = context.actorOf(Props(new UpsertResponseHandler(name, originalSender)))
           finder.tell(Request.Upsert(id, value, u), handler)
-        case None => replyInsertOnNotExistingCollection(coll, id)
+        case None => replyIfNotExistingCollection(UpsertNAck(coll, id, s"Collection $coll does not exist"))
       }
   }
 
@@ -78,7 +89,7 @@ class Actorbase extends Actor {
           val originalSender = sender()
           val handler = context.actorOf(Props(new QueryResponseHandler(name, originalSender)))
           finder.tell(Query(id, u), handler)
-        case None => replyFindOnNotExistingCollection(coll, id)
+        case None => replyIfNotExistingCollection(FindNAck(coll, id, s"Collection $coll does not exist"))
       }
   }
 
@@ -90,7 +101,7 @@ class Actorbase extends Actor {
           val originalSender = sender()
           val handler = context.actorOf(Props(new DeleteResponseHandler(name, originalSender)))
           finder.tell(Request.Delete(id, u), handler)
-        case None => replyDeleteOnNotExistingCollection(coll, id)
+        case None => replyIfNotExistingCollection(DeleteNAck(coll, id, s"Collection $coll does not exist"))
       }
   }
 
@@ -102,36 +113,14 @@ class Actorbase extends Actor {
           val originalSender = sender()
           val handler = context.actorOf(Props(new CountResponseHandler(name, originalSender)))
           finder.tell(Request.Count(u), handler)
-        case None => replyCountOnNotExistingCollection(coll)
+        case None => replyIfNotExistingCollection(CountNAck(coll, s"Collection $coll does not exist"))
       }
   }
 
-  private def replyFindOnNotExistingCollection(collection: String, id: String): Unit = {
-    sender() ! FindNAck(collection, id, s"Collection $collection does not exist")
+  private def replyIfNotExistingCollection(message: Any): Unit = {
+    sender() ! message
   }
 
-  private def replyInsertOnNotExistingCollection(collection: String, id: String): Unit = {
-    sender() ! UpsertNAck(collection, id, s"Collection $collection does not exist")
-  }
-
-  private def replyDeleteOnNotExistingCollection(collection: String, id: String): Unit = {
-    sender() ! DeleteNAck(collection, id, s"Collection $collection does not exist")
-  }
-
-  private def replyCountOnNotExistingCollection(collection: String): Unit = {
-    sender() ! CountNAck(collection, s"Collection $collection does not exist")
-  }
-
-  private def createCollection(name: String): Unit = {
-    try {
-      val table = context.actorOf(Props(new StoreFinder(name)))
-      sender() ! CreateCollectionAck(name)
-      tables.+=((name, Collection(name, table)))
-    } catch {
-      case ex: Exception =>
-        sender() ! CreateCollectionNAck(name, ex.getMessage)
-    }
-  }
 }
 
 object Actorbase {
